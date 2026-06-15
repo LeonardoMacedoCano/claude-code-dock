@@ -1,0 +1,22 @@
+services:
+  claude-dock:
+    container_name: claude-dock
+    build:
+      context: ${CLAUDE_SOURCE_PATH:-.}
+    environment:
+      - AUTO_START_MODE=${AUTO_START_MODE:-interactive}
+      - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-true}
+      - CLAUDE_EXTRA_ARGS=${CLAUDE_EXTRA_ARGS:-}
+      - REMOTE_SESSION_NAME=${REMOTE_SESSION_NAME:-}
+      - TZ=${TZ:-UTC}
+      - GIT_USER_NAME=${GIT_USER_NAME:-}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
+      - TERM=xterm-256color
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+    volumes:
+      - ${WORKSPACE_PATH:-./workspaces}:/workspace
+      - ${CONFIG_PATH:-./config}:/home/node/.claude
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
