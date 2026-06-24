@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CONTAINER_NAME="claude-dock"
+CONTAINER_NAME="claude-code-dock"
 TAIL_LINES=50
 FOLLOW=true
 SINCE=""
@@ -55,7 +55,7 @@ CONTAINER_STATUS=$(docker inspect --format='{{.State.Status}}' "${CONTAINER_NAME
 
 echo ""
 echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-echo -e "${CYAN}${BOLD}║              ClaudeDock — Logs                      ║${RESET}"
+echo -e "${CYAN}${BOLD}║              ClaudeCodeDock — Logs                      ║${RESET}"
 echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
 echo ""
 echo -e "  Container: ${BOLD}${CONTAINER_NAME}${RESET}"

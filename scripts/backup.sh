@@ -7,7 +7,7 @@ PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 ENV_FILE="${PROJECT_DIR}/.env"
 
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-BACKUP_NAME="claude-dock-backup-${TIMESTAMP}"
+BACKUP_NAME="claude-code-dock-backup-${TIMESTAMP}"
 OUTPUT_DIR="${PROJECT_DIR}/backups"
 INCLUDE_WORKSPACE=false
 QUIET=false
@@ -56,7 +56,7 @@ log() {
 header() {
     log ""
     log "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    log "${CYAN}${BOLD}║              ClaudeDock — Backup                    ║${RESET}"
+    log "${CYAN}${BOLD}║              ClaudeCodeDock — Backup                    ║${RESET}"
     log "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     log ""
 }
@@ -173,12 +173,12 @@ create_backup_archive() {
 manage_old_backups() {
     step "Checking existing backups..."
 
-    BACKUP_COUNT=$(ls -1 "${OUTPUT_DIR}"/claude-dock-backup-*.tar.gz 2>/dev/null | wc -l)
+    BACKUP_COUNT=$(ls -1 "${OUTPUT_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | wc -l)
     ok "Total backups in ${OUTPUT_DIR}: ${BACKUP_COUNT}"
 
     if [ "${BACKUP_COUNT}" -gt 10 ]; then
         warn "More than 10 backups found. Removing oldest ones..."
-        ls -1t "${OUTPUT_DIR}"/claude-dock-backup-*.tar.gz | tail -n +11 | xargs rm -f
+        ls -1t "${OUTPUT_DIR}"/claude-code-dock-backup-*.tar.gz | tail -n +11 | xargs rm -f
         ok "Old backups removed."
     fi
 }

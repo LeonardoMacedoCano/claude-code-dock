@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CONTAINER_NAME="claude-dock"
+CONTAINER_NAME="claude-code-dock"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,7 +22,7 @@ fi
 
 echo ""
 echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-echo -e "${CYAN}${BOLD}║          ClaudeDock — Interactive Shell             ║${RESET}"
+echo -e "${CYAN}${BOLD}║          ClaudeCodeDock — Interactive Shell             ║${RESET}"
 echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
 echo ""
 echo -e "  ${GREEN}[✓]${RESET} Connecting to container ${BOLD}${CONTAINER_NAME}${RESET}..."

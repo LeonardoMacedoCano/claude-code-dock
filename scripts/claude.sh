@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CONTAINER_NAME="claude-dock"
+CONTAINER_NAME="claude-code-dock"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

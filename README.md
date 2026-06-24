@@ -1,4 +1,4 @@
-# ClaudeDock
+# ClaudeCodeDock
 
 **Have Claude Code always running — one container per project, Remote Control ready, zero friction.**
 
@@ -12,13 +12,13 @@
 
 ## Is This What You Need?
 
-**ClaudeDock is for you if:**
+**ClaudeCodeDock is for you if:**
 - You want to use [Claude Remote Control](https://docs.anthropic.com/en/docs/claude-code/remote-development) from any device — without having to prepare anything in advance
 - You have a server (homelab, Unraid, NAS, VPS, Raspberry Pi) that stays on 24/7
 - You want multiple projects always available — each with its own Claude session
 - You're tired of Remote Control freezing and not being able to unblock it remotely
 
-**ClaudeDock is not for you if:**
+**ClaudeCodeDock is not for you if:**
 - You don't have a 24/7 server
 - You only want to use Claude Code interactively on your main machine (just install `@anthropic-ai/claude-code` directly)
 
@@ -34,7 +34,7 @@ To use Remote Control, your machine needs to have Claude running with `--remote-
 **Problem 2 — Remote Control can freeze.**
 It happens: Claude asks for permission to run a command, you approve from the remote interface, but it stays stuck. The only fix is physical access to the terminal where Claude is running. If you're away from home, you're stuck.
 
-**What ClaudeDock does:**
+**What ClaudeCodeDock does:**
 - Runs Claude inside Docker on your 24/7 server — it's always on, always ready
 - Each container = one project, with its own workspace and its own session name
 - Remote Control is enabled by default — just open Claude.ai and your sessions are there
@@ -45,26 +45,26 @@ It happens: Claude asks for permission to run a command, you approve from the re
 
 ## The Multi-Project Pattern
 
-This is the core idea: **one ClaudeDock container per project**, all running on the same server, all sharing the same login.
+This is the core idea: **one ClaudeCodeDock container per project**, all running on the same server, all sharing the same login.
 
 ```
 Your 24/7 server
 +------------------------------------------------------------------+
 |                                                                  |
-|  Container: claudedock-homepage                                  |
+|  Container: claudecodedock-homepage                              |
 |  REMOTE_SESSION_NAME=HomePage                                    |
 |  WORKSPACE_PATH=/srv/homepage                                    |
-|  CONFIG_PATH=/srv/claude-config  <-- shared login               |
+|  CONFIG_PATH=/srv/claude-config  <-- shared login                |
 |                                                                  |
-|  Container: claudedock-calendar                                  |
+|  Container: claudecodedock-calendar                              |
 |  REMOTE_SESSION_NAME=Calendar                                    |
 |  WORKSPACE_PATH=/home/user/calendar-assistant                    |
-|  CONFIG_PATH=/srv/claude-config  <-- same folder                |
+|  CONFIG_PATH=/srv/claude-config  <-- same folder                 |
 |                                                                  |
-|  Container: claudedock-investments                               |
+|  Container: claudecodedock-investments                           |
 |  REMOTE_SESSION_NAME=Investments                                 |
 |  WORKSPACE_PATH=/home/user/investment-portfolio                  |
-|  CONFIG_PATH=/srv/claude-config  <-- same folder                |
+|  CONFIG_PATH=/srv/claude-config  <-- same folder                 |
 |                                                                  |
 +------------------------------------------------------------------+
                           |
@@ -84,7 +84,7 @@ From Claude.ai Remote Control, you see all three sessions by name. Click one, st
 
 ### Homepage in production
 
-You have a website running on your server, configured with a domain. Create a ClaudeDock container pointing the workspace to your site's production folder:
+You have a website running on your server, configured with a domain. Create a ClaudeCodeDock container pointing the workspace to your site's production folder:
 
 ```env
 REMOTE_SESSION_NAME=HomePage
@@ -126,7 +126,7 @@ Ask: *"Based on my current portfolio, where does it make sense to invest this mo
 
 ### The limit is your imagination
 
-One 24/7 server. Any number of ClaudeDock containers. Each with:
+One 24/7 server. Any number of ClaudeCodeDock containers. Each with:
 - Its own project folder
 - Its own session name (visible in Remote Control)
 - Its own dedicated Claude instance
@@ -139,11 +139,11 @@ A recipe assistant. A home automation helper. A private journal with AI analysis
 
 Before creating any container, set up two folders that all containers will share. **You only do this once.**
 
-### Step 1 — Clone ClaudeDock to your server
+### Step 1 — Clone ClaudeCodeDock to your server
 
 ```bash
 # Choose a permanent location on your server
-git clone https://github.com/LeonardoMacedoCano/ClaudeDock.git /srv/claudedock
+git clone https://github.com/LeonardoMacedoCano/ClaudeCodeDock.git /srv/claudecodedock
 ```
 
 This folder will be referenced by all containers as `CLAUDE_SOURCE_PATH`. You never need to clone it again.
@@ -164,15 +164,15 @@ This is `CONFIG_PATH`. It stores your Claude login credentials. **All containers
 
 ```bash
 mkdir -p /srv/projects/homepage
-cp /srv/claudedock/.env.example /srv/projects/homepage/.env
-cp /srv/claudedock/docker-compose.yml /srv/projects/homepage/docker-compose.yml
+cp /srv/claudecodedock/.env.example /srv/projects/homepage/.env
+cp /srv/claudecodedock/docker-compose.yml /srv/projects/homepage/docker-compose.yml
 ```
 
 ### 2. Configure `.env`
 
 ```env
-# The ClaudeDock source (points to where you cloned it)
-CLAUDE_SOURCE_PATH=/srv/claudedock
+# The ClaudeCodeDock source (points to where you cloned it)
+CLAUDE_SOURCE_PATH=/srv/claudecodedock
 
 # Shared login credentials — configure once, reuse everywhere
 CONFIG_PATH=/srv/claude-config
@@ -187,7 +187,7 @@ REMOTE_SESSION_NAME=HomePage
 AUTO_START_MODE=remote
 
 # Container name — must be unique per container
-# Edit docker-compose.yml: container_name: claudedock-homepage
+# Edit docker-compose.yml: container_name: claudecodedock-homepage
 
 TZ=America/Sao_Paulo
 GIT_USER_NAME=Your Name
@@ -205,7 +205,7 @@ docker compose up -d
 ### 4. First login (only once, for the first container)
 
 ```bash
-docker exec -it claudedock-homepage tmux attach-session -t main
+docker exec -it claudecodedock-homepage tmux attach-session -t main
 ```
 
 Claude Code will display the authentication flow. Complete it. Credentials are saved to `/srv/claude-config/`.
@@ -224,14 +224,14 @@ For the second, third, tenth container — **no login required.** Just copy, con
 
 ```bash
 mkdir -p /srv/projects/calendar
-cp /srv/claudedock/.env.example /srv/projects/calendar/.env
-cp /srv/claudedock/docker-compose.yml /srv/projects/calendar/docker-compose.yml
+cp /srv/claudecodedock/.env.example /srv/projects/calendar/.env
+cp /srv/claudecodedock/docker-compose.yml /srv/projects/calendar/docker-compose.yml
 ```
 
 Edit `/srv/projects/calendar/.env`:
 
 ```env
-CLAUDE_SOURCE_PATH=/srv/claudedock
+CLAUDE_SOURCE_PATH=/srv/claudecodedock
 CONFIG_PATH=/srv/claude-config        # <-- same folder, already authenticated
 WORKSPACE_PATH=/home/user/calendar-assistant
 REMOTE_SESSION_NAME=Calendar
@@ -241,7 +241,7 @@ TZ=America/Sao_Paulo
 
 Edit `docker-compose.yml` to set a unique container name:
 ```yaml
-container_name: claudedock-calendar
+container_name: claudecodedock-calendar
 ```
 
 Then:
@@ -263,12 +263,12 @@ It happens with Remote Control — a permission prompt gets stuck. The fix:
 2. SSH into the server
 3. Attach to the frozen container's tmux session:
    ```bash
-   docker exec -it claudedock-homepage tmux attach-session -t main
+   docker exec -it claudecodedock-homepage tmux attach-session -t main
    ```
 4. Respond to the prompt or unblock whatever is stuck
 5. Disconnect with `Ctrl+B, D`
 
-The session resumes normally in Remote Control. This is exactly why ClaudeDock runs Claude inside tmux — you can always reach the terminal, from anywhere, via VPN.
+The session resumes normally in Remote Control. This is exactly why ClaudeCodeDock runs Claude inside tmux — you can always reach the terminal, from anywhere, via VPN.
 
 ---
 
@@ -276,7 +276,7 @@ The session resumes normally in Remote Control. This is exactly why ClaudeDock r
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAUDE_SOURCE_PATH` | `.` | Path to the ClaudeDock clone on the host |
+| `CLAUDE_SOURCE_PATH` | `.` | Path to the ClaudeCodeDock clone on the host |
 | `CONFIG_PATH` | `./config` | Path to credentials — share this across all containers |
 | `WORKSPACE_PATH` | `./workspaces` | This container's project folder |
 | `AUTO_START_MODE` | `interactive` | Mode: `interactive`, `remote`, `shell` |
@@ -311,7 +311,7 @@ The session resumes normally in Remote Control. This is exactly why ClaudeDock r
 
 ## Available Scripts
 
-From inside any ClaudeDock project folder:
+From inside any ClaudeCodeDock project folder:
 
 ```bash
 ./scripts/install.sh      # Full initial setup
@@ -332,7 +332,7 @@ From inside any ClaudeDock project folder:
 ```
 Your 24/7 server
 +-----------------------------------------------+
-|  Docker Container "claudedock-homepage"        |
+|  Docker Container "claudecodedock-homepage"        |
 |  User: node (UID 1000, non-root)              |
 |                                               |
 |   tmux (PID 1)                                |
@@ -344,7 +344,7 @@ Your 24/7 server
               ^
    Remote Control from Claude.ai (any device)
    or:
-   docker exec -it claudedock-homepage tmux attach-session -t main
+   docker exec -it claudecodedock-homepage tmux attach-session -t main
    (for debugging / unblocking)
 ```
 
@@ -356,7 +356,7 @@ Claude runs inside a tmux session. tmux is PID 1 of the container. If you detach
 
 ```
 First container, first time:
-  1. docker exec -it claudedock-<name> tmux attach-session -t main
+  1. docker exec -it claudecodedock-<name> tmux attach-session -t main
   2. Claude Code shows authentication flow
   3. You log in
   4. Credentials saved to CONFIG_PATH on the host
@@ -372,7 +372,7 @@ Every other container, every restart:
 ## Project Structure
 
 ```
-ClaudeDock/
+ClaudeCodeDock/
 +-- Dockerfile              <- Image with Claude Code (node user, non-root)
 +-- docker-compose.yml      <- Container orchestration template
 +-- .env.example            <- Configuration template
@@ -426,20 +426,20 @@ See [Security](docs/security.md) for full guidance.
 ssh root@your-unraid-server
 cd /mnt/user/appdata/
 
-git clone https://github.com/LeonardoMacedoCano/ClaudeDock.git claudedock
+git clone https://github.com/LeonardoMacedoCano/ClaudeCodeDock.git claudecodedock
 mkdir -p /mnt/user/appdata/claude-config
 ```
 
 For each project:
 ```bash
 mkdir -p /mnt/user/appdata/projects/homepage
-cp /mnt/user/appdata/claudedock/.env.example /mnt/user/appdata/projects/homepage/.env
-cp /mnt/user/appdata/claudedock/docker-compose.yml /mnt/user/appdata/projects/homepage/docker-compose.yml
+cp /mnt/user/appdata/claudecodedock/.env.example /mnt/user/appdata/projects/homepage/.env
+cp /mnt/user/appdata/claudecodedock/docker-compose.yml /mnt/user/appdata/projects/homepage/docker-compose.yml
 ```
 
 Recommended `.env` for Unraid:
 ```env
-CLAUDE_SOURCE_PATH=/mnt/user/appdata/claudedock
+CLAUDE_SOURCE_PATH=/mnt/user/appdata/claudecodedock
 CONFIG_PATH=/mnt/user/appdata/claude-config
 WORKSPACE_PATH=/mnt/cache/www/myhomepage.com
 REMOTE_SESSION_NAME=HomePage
@@ -512,7 +512,7 @@ Yes. Each container needs a unique `container_name` in `docker-compose.yml`, a u
 
 Connect to your server via VPN, SSH in, and run:
 ```bash
-docker exec -it claudedock-<name> tmux attach-session -t main
+docker exec -it claudecodedock-<name> tmux attach-session -t main
 ```
 Unblock the session, then detach with `Ctrl+B, D`. Remote Control resumes.
 
@@ -522,13 +522,13 @@ An official Claude Code flag that skips confirmation prompts before running comm
 
 **Why non-root user?**
 
-Claude Code 2.x blocks `--dangerously-skip-permissions` when run as root (UID 0). ClaudeDock uses the `node` user (UID 1000) to satisfy this requirement and as a security best practice.
+Claude Code 2.x blocks `--dangerously-skip-permissions` when run as root (UID 0). ClaudeCodeDock uses the `node` user (UID 1000) to satisfy this requirement and as a security best practice.
 
 **How do I access the terminal if Remote Control is unavailable?**
 
 ```bash
 # From SSH on the server:
-docker exec -it claudedock-<name> tmux attach-session -t main
+docker exec -it claudecodedock-<name> tmux attach-session -t main
 
 # Disconnect without stopping:
 Ctrl+B, D
@@ -547,7 +547,7 @@ All containers restart automatically (`restart: unless-stopped`). Every Claude i
 | Container does not start | `docker compose logs` to see the error |
 | Session not appearing in Remote Control | Check `AUTO_START_MODE=remote` and `REMOTE_SESSION_NAME` in `.env` |
 | Asks for login every time | Verify `CONFIG_PATH` points to the same folder across containers |
-| Remote Control session frozen | SSH to server, `docker exec -it claudedock-<name> tmux attach-session -t main`, unblock |
+| Remote Control session frozen | SSH to server, `docker exec -it claudecodedock-<name> tmux attach-session -t main`, unblock |
 | Permission denied on workspace | `chown -R 1000:1000 /your/workspace/` (UID 1000 = node user) |
 | Empty workspace | Check `WORKSPACE_PATH` in `.env` and that the folder exists on host |
 
@@ -557,7 +557,7 @@ See [Troubleshooting Guide](docs/troubleshooting.md) for more.
 
 ## Legal Notice
 
-ClaudeDock is an independent open source project, not affiliated with Anthropic. Claude Code is a product of Anthropic. All use is subject to the [Anthropic Usage Policy](https://www.anthropic.com/legal/aup).
+ClaudeCodeDock is an independent open source project, not affiliated with Anthropic. Claude Code is a product of Anthropic. All use is subject to the [Anthropic Usage Policy](https://www.anthropic.com/legal/aup).
 
 ## License
 

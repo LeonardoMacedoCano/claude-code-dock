@@ -1,17 +1,17 @@
-# Docker Reference — ClaudeDock
+# Docker Reference — ClaudeCodeDock
 
 For Docker commands reference, see this document. For architecture details, see [Architecture](architecture.md). For troubleshooting, see [Troubleshooting Guide](troubleshooting.md).
 
 ## Core Concepts
 
-Before using ClaudeDock, it helps to understand how Docker containers behave in this project.
+Before using ClaudeCodeDock, it helps to understand how Docker containers behave in this project.
 
 ### Container as a "Persistent Server"
 
-In many projects, containers are ephemeral — created, used, and discarded. In ClaudeDock, the container is treated as a persistent server, similar to a system service:
+In many projects, containers are ephemeral — created, used, and discarded. In ClaudeCodeDock, the container is treated as a persistent server, similar to a system service:
 
 ```
-Conventional server:       ClaudeDock:
+Conventional server:       ClaudeCodeDock:
 +------------------+       +------------------------------+
 |  systemd service |       |  Docker container            |
 |  nginx (PID 1)   |  ~=   |  tmux (PID 1)                |
@@ -24,9 +24,9 @@ Conventional server:       ClaudeDock:
 
 Claude Code runs inside a tmux session named `main`. tmux is the container's PID 1. This means:
 
-- `docker exec -it claude-dock tmux attach-session -t main` connects to the running Claude session
+- `docker exec -it claude-code-dock tmux attach-session -t main` connects to the running Claude session
 - `Ctrl+B D` detaches from the session without killing Claude
-- `docker exec -it claude-dock bash` opens a separate shell for inspection, without touching Claude
+- `docker exec -it claude-code-dock bash` opens a separate shell for inspection, without touching Claude
 
 ---
 
@@ -49,7 +49,7 @@ docker compose up
 ./scripts/attach.sh
 
 # Or directly:
-docker exec -it claude-dock tmux attach-session -t main
+docker exec -it claude-code-dock tmux attach-session -t main
 
 # To disconnect WITHOUT stopping Claude:
 # Press Ctrl+B then D
@@ -96,7 +96,7 @@ docker compose up -d --force-recreate
 
 ## Volume Management
 
-### ClaudeDock volumes
+### ClaudeCodeDock volumes
 
 The project uses two main volumes:
 
@@ -112,13 +112,13 @@ volumes:
 
 ```bash
 # View volumes mounted in the container
-docker inspect claude-dock | jq '.[0].Mounts'
+docker inspect claude-code-dock | jq '.[0].Mounts'
 
 # List files in the config directory
-docker exec claude-dock ls -la /home/node/.claude/
+docker exec claude-code-dock ls -la /home/node/.claude/
 
 # List files in the workspace
-docker exec claude-dock ls -la /workspace/
+docker exec claude-code-dock ls -la /workspace/
 ```
 
 ### Check disk usage
@@ -150,7 +150,7 @@ du -sh "${WORKSPACE_PATH}"
 ### Inspect variables inside the container
 
 ```bash
-docker exec claude-dock env | sort
+docker exec claude-code-dock env | sort
 ```
 
 ---
@@ -164,13 +164,13 @@ docker exec claude-dock env | sort
 ./scripts/logs.sh
 
 # Via docker directly
-docker logs -f claude-dock
+docker logs -f claude-code-dock
 
 # Last 100 lines + follow
-docker logs -f --tail 100 claude-dock
+docker logs -f --tail 100 claude-code-dock
 
 # Logs from the last hour
-docker logs --since 1h claude-dock
+docker logs --since 1h claude-code-dock
 ```
 
 ---
@@ -206,16 +206,16 @@ The `--no-cache` flag ensures npm downloads and installs the latest version of `
 
 ```bash
 # Claude Code version in the image
-docker exec claude-dock claude --version
+docker exec claude-code-dock claude --version
 
 # Globally installed npm packages
-docker exec claude-dock npm list -g --depth=0
+docker exec claude-code-dock npm list -g --depth=0
 
 # Current container user (should be 'node')
-docker exec claude-dock whoami
+docker exec claude-code-dock whoami
 
 # Image operating system
-docker exec claude-dock cat /etc/os-release
+docker exec claude-code-dock cat /etc/os-release
 ```
 
 ---
@@ -267,10 +267,10 @@ docker exec -it claude-project-b tmux attach-session -t main
 docker compose logs
 
 # Check status
-docker ps -a --filter name=claude-dock
+docker ps -a --filter name=claude-code-dock
 
 # Inspect stopped container
-docker inspect claude-dock
+docker inspect claude-code-dock
 ```
 
 ### "Error: cannot attach to a stopped container"
@@ -297,7 +297,7 @@ docker compose logs --tail 20
 docker run --rm -it \
   --user node \
   -v "${WORKSPACE_PATH:-./workspaces}:/workspace" \
-  claude-dock_claude-dock \
+  claude-code-dock_claude-code-dock \
   /bin/bash
 ```
 
@@ -322,13 +322,13 @@ docker compose up -d
 
 # Connect
 ./scripts/attach.sh
-# or: docker exec -it claude-dock tmux attach-session -t main
+# or: docker exec -it claude-code-dock tmux attach-session -t main
 
 # Disconnect (without stopping Claude)
 Ctrl+B, D
 
 # Debug shell (separate process)
-docker exec -it claude-dock bash
+docker exec -it claude-code-dock bash
 # or
 ./scripts/shell.sh
 
@@ -339,12 +339,12 @@ docker exec -it claude-dock bash
 ./scripts/remote.sh
 
 # Logs
-docker logs -f claude-dock
+docker logs -f claude-code-dock
 # or
 ./scripts/logs.sh
 
 # Status
-docker ps --filter name=claude-dock
+docker ps --filter name=claude-code-dock
 
 # Stop
 docker compose stop

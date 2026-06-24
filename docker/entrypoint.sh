@@ -28,7 +28,7 @@ print_banner() {
     echo " ╚═════╝  ╚═════╝  ╚═════╝╚═╝  ╚═╝"
     echo -e "${RESET}"
     echo -e "${BOLD}  Claude Code — Persistent Environment for 24/7 Servers${RESET}"
-    echo -e "  ${BLUE}https://github.com/LeonardoMacedoCano/ClaudeDock${RESET}"
+    echo -e "  ${BLUE}https://github.com/LeonardoMacedoCano/ClaudeCodeDock${RESET}"
     echo ""
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo ""
@@ -176,17 +176,17 @@ echo ""
 case "${MODE}" in
     remote)
         echo -e "  ${BOLD}Execution mode:${RESET} ${GREEN}remote control${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-dock tmux attach-session -t main${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-code-dock tmux attach-session -t main${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}Ctrl+B${RESET} then ${CYAN}D${RESET}"
         ;;
     shell)
         echo -e "  ${BOLD}Execution mode:${RESET} ${YELLOW}shell (bash)${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-dock bash${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-code-dock bash${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}exit${RESET} or ${CYAN}Ctrl+D${RESET}"
         ;;
     *)
         echo -e "  ${BOLD}Execution mode:${RESET} ${GREEN}interactive${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-dock tmux attach-session -t main${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-code-dock tmux attach-session -t main${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}Ctrl+B${RESET} then ${CYAN}D${RESET}"
         echo -e "  ${BOLD}Debug shell:${RESET}    ${CYAN}./scripts/shell.sh${RESET}"
         echo ""

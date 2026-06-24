@@ -1,4 +1,4 @@
-# Troubleshooting Guide — ClaudeDock
+# Troubleshooting Guide — ClaudeCodeDock
 
 For architecture details, see [Architecture](architecture.md). For Docker commands reference, see [Docker Reference](docker.md).
 
@@ -8,23 +8,23 @@ Before any specific troubleshooting, collect this information:
 
 ```bash
 # Container status
-docker ps -a --filter name=claude-dock
+docker ps -a --filter name=claude-code-dock
 
 # Last 50 lines of logs
-docker logs --tail 50 claude-dock
+docker logs --tail 50 claude-code-dock
 
 # Docker version
 docker --version
 docker compose version
 
 # Resource usage
-docker stats claude-dock --no-stream
+docker stats claude-code-dock --no-stream
 
 # Container system info
-docker exec claude-dock uname -a
-docker exec claude-dock node --version
-docker exec claude-dock claude --version
-docker exec claude-dock whoami  # should show 'node'
+docker exec claude-code-dock uname -a
+docker exec claude-code-dock node --version
+docker exec claude-code-dock claude --version
+docker exec claude-code-dock whoami  # should show 'node'
 ```
 
 ---
@@ -35,12 +35,12 @@ docker exec claude-dock whoami  # should show 'node'
 
 **Symptom:**
 ```
-claude-dock   Exited (1) 2 seconds ago
+claude-code-dock   Exited (1) 2 seconds ago
 ```
 
 **Diagnosis:**
 ```bash
-docker logs claude-dock
+docker logs claude-code-dock
 ```
 
 **Causes and solutions:**
@@ -66,7 +66,7 @@ mkdir -p /your/workspace/path
 
 **C) Image was not built:**
 ```
-Unable to find image 'claude-dock:latest' locally
+Unable to find image 'claude-code-dock:latest' locally
 ```
 ```bash
 docker compose build
@@ -79,10 +79,10 @@ docker compose build
 **Diagnosis:**
 ```bash
 # View exit code
-docker inspect claude-dock | jq '.[0].State'
+docker inspect claude-code-dock | jq '.[0].State'
 
 # View full logs
-docker logs claude-dock
+docker logs claude-code-dock
 ```
 
 **Cause A — Claude Code not found in the image:**
@@ -99,7 +99,7 @@ docker compose up -d
 ```bash
 # Check entrypoint permissions
 docker run --rm --entrypoint ls \
-  claude-dock_claude-dock \
+  claude-code-dock_claude-code-dock \
   -la /usr/local/bin/entrypoint.sh
 
 # If needed, rebuild
@@ -113,13 +113,13 @@ docker compose build --no-cache
 **Symptom:**
 ```
 NAME          STATUS
-claude-dock   Restarting (1) 3 seconds ago
+claude-code-dock   Restarting (1) 3 seconds ago
 ```
 
 **Diagnosis:**
 ```bash
 # View loop logs
-docker logs --tail 20 claude-dock
+docker logs --tail 20 claude-code-dock
 ```
 
 **Diagnostic solution — start with shell:**
@@ -129,7 +129,7 @@ docker logs --tail 20 claude-dock
 docker compose up -d --force-recreate
 
 # Connect and investigate
-docker exec -it claude-dock bash
+docker exec -it claude-code-dock bash
 ```
 
 Or start without entrypoint:
@@ -139,7 +139,7 @@ docker run --rm -it \
   --entrypoint /bin/bash \
   -v "$(pwd)/config:/home/node/.claude" \
   -v "${WORKSPACE_PATH:-$(pwd)/workspaces}:/workspace" \
-  claude-dock_claude-dock
+  claude-code-dock_claude-code-dock
 ```
 
 ---
@@ -156,13 +156,13 @@ docker run --rm -it \
 
 ```bash
 # Check if the container is running
-docker ps --filter name=claude-dock
+docker ps --filter name=claude-code-dock
 
 # Check if the tmux session exists
-docker exec claude-dock tmux list-sessions
+docker exec claude-code-dock tmux list-sessions
 
 # If Claude does not appear, check logs
-docker logs --tail 10 claude-dock
+docker logs --tail 10 claude-code-dock
 ```
 
 ---
@@ -174,7 +174,7 @@ docker logs --tail 10 claude-dock
 docker compose up -d
 
 # Check why it stopped
-docker logs --tail 20 claude-dock
+docker logs --tail 20 claude-code-dock
 ```
 
 ---
@@ -203,10 +203,10 @@ docker logs --tail 20 claude-dock
 
 ```bash
 # Check TERM inside the container
-docker exec claude-dock echo $TERM
+docker exec claude-code-dock echo $TERM
 
 # When connecting, force the correct TERM
-TERM=xterm-256color docker exec -it claude-dock tmux attach-session -t main
+TERM=xterm-256color docker exec -it claude-code-dock tmux attach-session -t main
 
 # If using local tmux, set tmux's TERM
 echo 'set -g default-terminal "screen-256color"' >> ~/.tmux.conf
@@ -226,10 +226,10 @@ echo 'set -g default-terminal "screen-256color"' >> ~/.tmux.conf
 ls -la ./config/
 
 # Check if the volume is mounted correctly
-docker inspect claude-dock | jq '.[0].Mounts'
+docker inspect claude-code-dock | jq '.[0].Mounts'
 
 # Check files inside the container
-docker exec claude-dock ls -la /home/node/.claude/
+docker exec claude-code-dock ls -la /home/node/.claude/
 ```
 
 **Solutions:**
@@ -238,8 +238,8 @@ docker exec claude-dock ls -la /home/node/.claude/
 Claude Code may have saved credentials in a different location. Check:
 ```bash
 # After logging in, check where credentials were saved
-docker exec claude-dock find /home/node -name "*.json" 2>/dev/null
-docker exec claude-dock find /home/node -name "credentials*" 2>/dev/null
+docker exec claude-code-dock find /home/node -name "*.json" 2>/dev/null
+docker exec claude-code-dock find /home/node -name "credentials*" 2>/dev/null
 ```
 
 **B) Incorrect permission on `./config` directory:**
@@ -297,13 +297,13 @@ docker compose restart
 **Diagnosis:**
 ```bash
 # Check if workspace is mounted
-docker exec claude-dock ls -la /workspace/
+docker exec claude-code-dock ls -la /workspace/
 
 # Check WORKSPACE_PATH in .env
 grep WORKSPACE_PATH .env
 
 # Check mount
-docker inspect claude-dock | jq '.[0].Mounts[] | select(.Destination == "/workspace")'
+docker inspect claude-code-dock | jq '.[0].Mounts[] | select(.Destination == "/workspace")'
 ```
 
 **Causes and solutions:**
@@ -334,7 +334,7 @@ docker compose down && docker compose up -d
 ls -la /your/workspace/
 
 # The container runs as node (UID 1000)
-docker exec claude-dock id
+docker exec claude-code-dock id
 
 # If the workspace belongs to a different user on the host:
 chown -R 1000:1000 /your/workspace/
@@ -350,10 +350,10 @@ chmod -R 777 /your/workspace/
 
 ```bash
 # Check resource usage
-docker stats claude-dock --no-stream
+docker stats claude-code-dock --no-stream
 
 # Check if there is a memory limit
-docker inspect claude-dock | jq '.[0].HostConfig.Memory'
+docker inspect claude-code-dock | jq '.[0].HostConfig.Memory'
 
 # Check host load
 uptime
@@ -410,7 +410,7 @@ If you need to report a bug, collect this information:
 
 ```bash
 #!/bin/bash
-echo "=== ClaudeDock Debug Info ==="
+echo "=== ClaudeCodeDock Debug Info ==="
 echo "Date: $(date)"
 echo ""
 echo "=== Docker Version ==="
@@ -418,19 +418,19 @@ docker --version
 docker compose version
 echo ""
 echo "=== Container Status ==="
-docker ps -a --filter name=claude-dock
+docker ps -a --filter name=claude-code-dock
 echo ""
 echo "=== Container Inspect ==="
-docker inspect claude-dock 2>/dev/null | jq '.[0].State' || echo "Container not found"
+docker inspect claude-code-dock 2>/dev/null | jq '.[0].State' || echo "Container not found"
 echo ""
 echo "=== Container User ==="
-docker exec claude-dock whoami 2>/dev/null || echo "Container is not running"
+docker exec claude-code-dock whoami 2>/dev/null || echo "Container is not running"
 echo ""
 echo "=== Recent Logs ==="
-docker logs --tail 30 claude-dock 2>/dev/null || echo "No logs available"
+docker logs --tail 30 claude-code-dock 2>/dev/null || echo "No logs available"
 echo ""
 echo "=== Volumes ==="
-docker inspect claude-dock 2>/dev/null | jq '.[0].Mounts' || echo "N/A"
+docker inspect claude-code-dock 2>/dev/null | jq '.[0].Mounts' || echo "N/A"
 echo ""
 echo "=== Host Info ==="
 uname -a

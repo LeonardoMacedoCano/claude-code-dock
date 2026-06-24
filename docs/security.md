@@ -1,10 +1,10 @@
-# Security — ClaudeDock
+# Security — ClaudeCodeDock
 
 For architecture details, see [Architecture](architecture.md). For general setup, see the [README](../README.md).
 
 ## Threat Model
 
-ClaudeDock is designed for use in **personal and homelab environments** — a single user or family on a trusted private network. The threat model is different from a public web application.
+ClaudeCodeDock is designed for use in **personal and homelab environments** — a single user or family on a trusted private network. The threat model is different from a public web application.
 
 **Threats considered:**
 - Unauthorized access to the container via local network
@@ -53,7 +53,7 @@ ls -la ./config/
 # Create encrypted backup with GPG
 ./scripts/backup.sh --output /tmp/backup-temp/
 gpg --symmetric --cipher-algo AES256 \
-    /tmp/backup-temp/claude-dock-backup-*.tar.gz
+    /tmp/backup-temp/claude-code-dock-backup-*.tar.gz
 
 # Move encrypted backup to a safe location
 mv /tmp/backup-temp/*.gpg /mnt/user/backups/
@@ -83,16 +83,16 @@ The container runs as the `node` user (UID/GID 1000) — **not as root**. This i
 
 ```bash
 # Verify current user in the container
-docker exec claude-dock whoami
+docker exec claude-code-dock whoami
 # -> node
 
-docker exec claude-dock id
+docker exec claude-code-dock id
 # -> uid=1000(node) gid=1000(node) groups=1000(node)
 ```
 
 ### No exposed ports
 
-By design, ClaudeDock **does not expose any network ports**. Interaction is exclusively via terminal. This eliminates an entire category of network attacks.
+By design, ClaudeCodeDock **does not expose any network ports**. Interaction is exclusively via terminal. This eliminates an entire category of network attacks.
 
 ```yaml
 # docker-compose.yml -- there is no 'ports' section
@@ -106,7 +106,7 @@ For greater isolation, restrict the container's network access:
 ```yaml
 # docker-compose.yml
 services:
-  claude-dock:
+  claude-code-dock:
     # ... other settings ...
     networks:
       - claude_network
@@ -127,7 +127,7 @@ To access the server remotely and connect to Claude Code:
 
 ```bash
 # 1. Generate SSH key (on the client computer)
-ssh-keygen -t ed25519 -C "claude-dock-access"
+ssh-keygen -t ed25519 -C "claude-code-dock-access"
 
 # 2. Copy public key to the server
 ssh-copy-id -i ~/.ssh/id_ed25519.pub user@your-server
@@ -196,7 +196,7 @@ ls -la .env
 
 ---
 
-## What ClaudeDock Does NOT Do
+## What ClaudeCodeDock Does NOT Do
 
 It is important to make explicit what this project **does not do** for security and integrity reasons:
 
@@ -232,21 +232,21 @@ ls -laR ./config/
 
 ```bash
 # Running processes
-docker exec claude-dock ps aux
+docker exec claude-code-dock ps aux
 
 # Open network connections
-docker exec claude-dock ss -tlnp 2>/dev/null || \
-docker exec claude-dock netstat -tlnp 2>/dev/null
+docker exec claude-code-dock ss -tlnp 2>/dev/null || \
+docker exec claude-code-dock netstat -tlnp 2>/dev/null
 ```
 
 ### Scan image for known vulnerabilities
 
 ```bash
 # With Docker Scout (requires Docker Desktop or login)
-docker scout cves claude-dock_claude-dock
+docker scout cves claude-code-dock_claude-code-dock
 
 # With Trivy (open source)
-trivy image claude-dock_claude-dock
+trivy image claude-code-dock_claude-code-dock
 ```
 
 ---
@@ -263,5 +263,5 @@ trivy image claude-dock_claude-dock
 [ ] Backups of ./config/ are stored securely
 [ ] The server is not directly exposed to the internet
 [ ] VPN configured for external access (if needed)
-[ ] Container runs as node user (not root) -- verify with: docker exec claude-dock whoami
+[ ] Container runs as node user (not root) -- verify with: docker exec claude-code-dock whoami
 ```

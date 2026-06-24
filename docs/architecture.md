@@ -1,8 +1,8 @@
-# Architecture — ClaudeDock
+# Architecture — ClaudeCodeDock
 
 ## Overview
 
-ClaudeDock implements a "persistent process in container" pattern, where Claude Code runs inside a tmux session (PID 1 = tmux) in a Docker container that restarts automatically. The user connects and disconnects via `tmux attach-session` without interrupting the session.
+ClaudeCodeDock implements a "persistent process in container" pattern, where Claude Code runs inside a tmux session (PID 1 = tmux) in a Docker container that restarts automatically. The user connects and disconnects via `tmux attach-session` without interrupting the session.
 
 ```
 +---------------------------------------------------------------+
@@ -13,7 +13,7 @@ ClaudeDock implements a "persistent process in container" pattern, where Claude 
 |  |              Docker Engine                               |  |
 |  |                                                          |  |
 |  |  +------------------------------------------------------+|  |
-|  |  |         Container: claude-dock                       ||  |
+|  |  |         Container: claude-code-dock                       ||  |
 |  |  |         User: node (UID 1000, non-root)              ||  |
 |  |  |                                                      ||  |
 |  |  |   PID 1: tmux                                        ||  |
@@ -52,7 +52,7 @@ ClaudeDock implements a "persistent process in container" pattern, where Claude 
 
 ## Components
 
-### 1. Docker Container (`claude-dock`)
+### 1. Docker Container (`claude-code-dock`)
 
 The core of the system. Contains:
 
@@ -148,13 +148,13 @@ tmux replaces entrypoint.sh as PID 1
 tmux starts Claude Code inside session "main"
         |
         v
-Container ready -- connect via: docker exec -it claude-dock tmux attach-session -t main
+Container ready -- connect via: docker exec -it claude-code-dock tmux attach-session -t main
 ```
 
 ### User Connection
 
 ```
-User runs: docker exec -it claude-dock tmux attach-session -t main
+User runs: docker exec -it claude-code-dock tmux attach-session -t main
         |
         v
 tmux connects the terminal to session "main" where Claude is running

@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 COMPOSE_FILE="${PROJECT_DIR}/docker-compose.yml"
-CONTAINER_NAME="claude-dock"
+CONTAINER_NAME="claude-code-dock"
 SKIP_BACKUP=false
 
 RED='\033[0;31m'
@@ -32,7 +32,7 @@ done
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             ClaudeDock — Update                     ║${RESET}"
+    echo -e "${CYAN}${BOLD}║             ClaudeCodeDock — Update                     ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
@@ -142,7 +142,7 @@ check_version() {
 cleanup_old_images() {
     step "Removing unused old Docker images..."
 
-    docker image prune -f --filter "label=org.opencontainers.image.title=ClaudeDock" 2>/dev/null || true
+    docker image prune -f --filter "label=org.opencontainers.image.title=ClaudeCodeDock" 2>/dev/null || true
     ok "Cleanup done."
 }
 

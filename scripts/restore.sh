@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 DEFAULT_BACKUP_DIR="${PROJECT_DIR}/backups"
-CONTAINER_NAME="claude-dock"
+CONTAINER_NAME="claude-code-dock"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,7 +17,7 @@ RESET='\033[0m'
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             ClaudeDock — Restore                    ║${RESET}"
+    echo -e "${CYAN}${BOLD}║             ClaudeCodeDock — Restore                    ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
@@ -50,7 +50,7 @@ list_backups() {
         exit 0
     fi
 
-    BACKUPS=$(ls -1t "${DEFAULT_BACKUP_DIR}"/claude-dock-backup-*.tar.gz 2>/dev/null || echo "")
+    BACKUPS=$(ls -1t "${DEFAULT_BACKUP_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null || echo "")
 
     if [ -z "${BACKUPS}" ]; then
         echo -e "  ${YELLOW}No backups found.${RESET}"
@@ -86,7 +86,7 @@ case "${1:-}" in
         exit 0
         ;;
     "")
-        LATEST=$(ls -1t "${DEFAULT_BACKUP_DIR}"/claude-dock-backup-*.tar.gz 2>/dev/null | head -1 || echo "")
+        LATEST=$(ls -1t "${DEFAULT_BACKUP_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | head -1 || echo "")
         if [ -z "${LATEST}" ]; then
             echo ""
             echo -e "${RED}[✗]${RESET} No backup found and no file specified."

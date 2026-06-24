@@ -7,7 +7,7 @@ PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 COMPOSE_FILE="${PROJECT_DIR}/docker-compose.yml"
 ENV_FILE="${PROJECT_DIR}/.env"
 ENV_EXAMPLE="${PROJECT_DIR}/.env.example"
-CONTAINER_NAME="claude-dock"
+CONTAINER_NAME="claude-code-dock"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -19,7 +19,7 @@ RESET='\033[0m'
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             ClaudeDock — Installation               ║${RESET}"
+    echo -e "${CYAN}${BOLD}║             ClaudeCodeDock — Installation               ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
@@ -93,7 +93,7 @@ check_env() {
             echo ""
             echo -e "  Example (Unraid):"
             echo -e "  ${BOLD}WORKSPACE_PATH=/mnt/user/projects${RESET}"
-            echo -e "  ${BOLD}CONFIG_PATH=/mnt/user/appdata/claude-dock/config${RESET}"
+            echo -e "  ${BOLD}CONFIG_PATH=/mnt/user/appdata/claude-code-dock/config${RESET}"
             echo ""
             read -r -p "  Press Enter after editing .env to continue (or Ctrl+C to cancel)..."
         else
@@ -166,7 +166,7 @@ build_image() {
 }
 
 start_services() {
-    step "Starting ClaudeDock..."
+    step "Starting ClaudeCodeDock..."
 
     cd "${PROJECT_DIR}"
     ${COMPOSE_CMD} -f "${COMPOSE_FILE}" up -d

@@ -1,8 +1,8 @@
-# Unraid Guide — ClaudeDock
+# Unraid Guide — ClaudeCodeDock
 
 ## Overview
 
-Unraid is one of the most popular platforms for homelabs and personal NAS systems. This guide covers two ways to run ClaudeDock on Unraid:
+Unraid is one of the most popular platforms for homelabs and personal NAS systems. This guide covers two ways to run ClaudeCodeDock on Unraid:
 
 1. **Via Docker Compose** (recommended for technical users)
 2. **Via Unraid Docker UI** (for users who prefer the Unraid GUI)
@@ -11,7 +11,7 @@ Unraid is one of the most popular platforms for homelabs and personal NAS system
 
 ## Recommended Experience for Unraid Users
 
-For the best ClaudeDock experience on Unraid:
+For the best ClaudeCodeDock experience on Unraid:
 
 1. **Install via Docker Compose** (Method 1 below)
 2. **Connect via SSH** + `./scripts/attach.sh` (or use the Unraid Console)
@@ -21,7 +21,7 @@ For the best ClaudeDock experience on Unraid:
 ```
 Recommended structure on Unraid:
 
-/mnt/user/appdata/ClaudeDock/     <- ClaudeDock project
+/mnt/user/appdata/ClaudeCodeDock/     <- ClaudeCodeDock project
     +-- Dockerfile
     +-- docker-compose.yml
     +-- .env
@@ -33,12 +33,12 @@ Recommended structure on Unraid:
 ```
 
 **Unraid UI container console:**
-- Go to **Docker** -> click the `claude-dock` container -> **Console**
+- Go to **Docker** -> click the `claude-code-dock` container -> **Console**
 - Connects directly to Claude Code (requires the Shell field set to `claude-console` — no slashes)
 - To disconnect without stopping: `Ctrl+B` then `D`
 
 **Debug shell (separate process):**
-- `./scripts/shell.sh` or `docker exec -it claude-dock bash`
+- `./scripts/shell.sh` or `docker exec -it claude-code-dock bash`
 - Opens a separate bash shell without interfering with Claude Code
 
 ---
@@ -70,10 +70,10 @@ docker compose version
 
 ### 1.2 — Choose a location for the project files
 
-On Unraid, store ClaudeDock configuration files in the `appdata` share:
+On Unraid, store ClaudeCodeDock configuration files in the `appdata` share:
 
 ```
-/mnt/user/appdata/ClaudeDock/
+/mnt/user/appdata/ClaudeCodeDock/
 ```
 
 This is the standard Unraid convention for persistent application data.
@@ -88,10 +88,10 @@ ssh root@your-unraid-server
 cd /mnt/user/appdata/
 
 # Clone the project
-git clone https://github.com/LeonardoMacedoCano/ClaudeDock.git ClaudeDock
+git clone https://github.com/LeonardoMacedoCano/ClaudeCodeDock.git ClaudeCodeDock
 
 # Enter the folder
-cd ClaudeDock
+cd ClaudeCodeDock
 ```
 
 ### 1.4 — Configure .env
@@ -108,13 +108,13 @@ Typical configuration for Unraid:
 
 ```env
 # Where the project lives (folder with the Dockerfile)
-CLAUDE_SOURCE_PATH=/mnt/user/appdata/ClaudeDock
+CLAUDE_SOURCE_PATH=/mnt/user/appdata/ClaudeCodeDock
 
 # Workspace on SSD cache (faster than the HDD array)
 WORKSPACE_PATH=/mnt/cache/projects
 
 # Claude Code credentials
-CONFIG_PATH=/mnt/user/appdata/ClaudeDock/config
+CONFIG_PATH=/mnt/user/appdata/ClaudeCodeDock/config
 
 # Execution mode
 AUTO_START_MODE=interactive
@@ -156,10 +156,10 @@ To ensure Docker Compose starts after boot, add a User Script via the **User Scr
 
 ```bash
 #!/bin/bash
-# Script: Start ClaudeDock
+# Script: Start ClaudeCodeDock
 # Trigger: Array Started
 
-cd /mnt/user/appdata/ClaudeDock
+cd /mnt/user/appdata/ClaudeCodeDock
 docker compose up -d
 ```
 
@@ -173,8 +173,8 @@ First, via SSH, build the image:
 
 ```bash
 ssh root@your-unraid-server
-cd /mnt/user/appdata/ClaudeDock
-docker build -t claude-dock:latest .
+cd /mnt/user/appdata/ClaudeCodeDock
+docker build -t claude-code-dock:latest .
 ```
 
 ### 2.2 — Add container via UI
@@ -186,8 +186,8 @@ In the Unraid panel:
 
 | Field | Value |
 |-------|-------|
-| Name | `claude-dock` |
-| Repository | `claude-dock:latest` |
+| Name | `claude-code-dock` |
+| Repository | `claude-code-dock:latest` |
 | Network Type | `bridge` |
 | Console shell command | `claude-console` |
 
@@ -210,7 +210,7 @@ Click **Add another Path, Port, Variable, Label or Device**:
 | Config Type | Path |
 | Name | Claude Config |
 | Container Path | `/home/node/.claude` |
-| Host Path | `/mnt/user/appdata/ClaudeDock/config` |
+| Host Path | `/mnt/user/appdata/ClaudeCodeDock/config` |
 | Access Mode | Read/Write |
 
 ### 2.4 — Configure environment variables
@@ -269,7 +269,7 @@ ssh root@your-unraid-server
 # Connect to Claude Code
 ./scripts/attach.sh
 # or directly:
-docker exec -it claude-dock tmux attach-session -t main
+docker exec -it claude-code-dock tmux attach-session -t main
 ```
 
 To disconnect without stopping Claude: `Ctrl+B` then `D`.
@@ -279,7 +279,7 @@ To disconnect without stopping Claude: `Ctrl+B` then `D`.
 1. Open the Unraid panel
 2. Go to **Docker**
 3. Make sure the **Shell** field in the template is set to `claude-console` (no slashes)
-4. Click the `claude-dock` container -> **Console**
+4. Click the `claude-code-dock` container -> **Console**
 
 The Console opens directly into the Claude Code session. To disconnect: `Ctrl+B` then `D`.
 
@@ -290,7 +290,7 @@ To inspect the container without interfering with Claude Code:
 ```bash
 ./scripts/shell.sh
 # or directly:
-docker exec -it claude-dock bash
+docker exec -it claude-code-dock bash
 ```
 
 ---
@@ -300,7 +300,7 @@ docker exec -it claude-dock bash
 ```
 /mnt/user/
 +-- appdata/
-|   +-- ClaudeDock/                   <- ClaudeDock project
+|   +-- ClaudeCodeDock/                   <- ClaudeCodeDock project
 |       +-- docker-compose.yml
 |       +-- Dockerfile
 |       +-- .env
@@ -340,19 +340,19 @@ The Unraid array uses HDDs that can be slow for intensive I/O on projects (readi
 ```bash
 # SSH into Unraid
 ssh root@your-unraid-server
-cd /mnt/user/appdata/ClaudeDock
+cd /mnt/user/appdata/ClaudeCodeDock
 
 # Backup Claude configuration
-./scripts/backup.sh --output /mnt/user/backups/claude-dock
+./scripts/backup.sh --output /mnt/user/backups/claude-code-dock
 ```
 
 ### Via CA Appdata Backup/Restore
 
-The **CA Appdata Backup/Restore** plugin can automatically back up the entire `appdata` folder, including `ClaudeDock/config`.
+The **CA Appdata Backup/Restore** plugin can automatically back up the entire `appdata` folder, including `ClaudeCodeDock/config`.
 
 Configure the plugin to include:
 ```
-/mnt/user/appdata/ClaudeDock/
+/mnt/user/appdata/ClaudeCodeDock/
 ```
 
 ---
@@ -362,7 +362,7 @@ Configure the plugin to include:
 ```bash
 # SSH into Unraid
 ssh root@your-unraid-server
-cd /mnt/user/appdata/ClaudeDock
+cd /mnt/user/appdata/ClaudeCodeDock
 
 # Update (automatically backs up first)
 ./scripts/update.sh
@@ -399,19 +399,19 @@ If the array takes time to mount, Docker may try to start the container before t
 #!/bin/bash
 # Wait for array to be available
 sleep 30
-cd /mnt/user/appdata/ClaudeDock
+cd /mnt/user/appdata/ClaudeCodeDock
 docker compose up -d
 ```
 
 ### Docker UI shows the container as "unhealthy"
 
-ClaudeDock does not implement an HTTP health check because it is an interactive terminal process. The status in the Unraid UI may show as "unhealthy" — this is expected and does not indicate a real problem.
+ClaudeCodeDock does not implement an HTTP health check because it is an interactive terminal process. The status in the Unraid UI may show as "unhealthy" — this is expected and does not indicate a real problem.
 
 To check the actual status:
 
 ```bash
-docker ps --filter name=claude-dock
-docker logs --tail 20 claude-dock
+docker ps --filter name=claude-code-dock
+docker logs --tail 20 claude-code-dock
 ```
 
 ### Slow workspace (using array HDD)
@@ -430,4 +430,4 @@ Set the `projects` share to **Use Cache: Yes** in the Unraid panel to automatica
 
 ## Community Applications Template (Future)
 
-An XML template for Community Applications is planned for future versions of ClaudeDock, allowing one-click installation via CA on Unraid. Until then, use Method 1 (Docker Compose) or Method 2 (Docker UI).
+An XML template for Community Applications is planned for future versions of ClaudeCodeDock, allowing one-click installation via CA on Unraid. Until then, use Method 1 (Docker Compose) or Method 2 (Docker UI).
