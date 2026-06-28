@@ -19,7 +19,7 @@ RESET='\033[0m'
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             ClaudeCodeDock — Installation               ║${RESET}"
+    echo -e "${CYAN}${BOLD}║             claude-code-dock — Installation               ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
@@ -166,7 +166,7 @@ build_image() {
 }
 
 start_services() {
-    step "Starting ClaudeCodeDock..."
+    step "Starting claude-code-dock..."
 
     cd "${PROJECT_DIR}"
     ${COMPOSE_CMD} -f "${COMPOSE_FILE}" up -d

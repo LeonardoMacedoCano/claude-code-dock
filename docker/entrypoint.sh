@@ -28,7 +28,7 @@ print_banner() {
     echo " ╚═════╝  ╚═════╝  ╚═════╝╚═╝  ╚═╝"
     echo -e "${RESET}"
     echo -e "${BOLD}  Claude Code — Persistent Environment for 24/7 Servers${RESET}"
-    echo -e "  ${BLUE}https://github.com/LeonardoMacedoCano/ClaudeCodeDock${RESET}"
+    echo -e "  ${BLUE}https://github.com/LeonardoMacedoCano/claude-code-dock${RESET}"
     echo ""
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo ""

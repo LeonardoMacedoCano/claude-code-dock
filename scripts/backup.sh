@@ -56,7 +56,7 @@ log() {
 header() {
     log ""
     log "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    log "${CYAN}${BOLD}║              ClaudeCodeDock — Backup                    ║${RESET}"
+    log "${CYAN}${BOLD}║              claude-code-dock — Backup                    ║${RESET}"
     log "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     log ""
 }

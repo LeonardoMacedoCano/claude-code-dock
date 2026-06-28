@@ -1,4 +1,4 @@
-# Troubleshooting Guide — ClaudeCodeDock
+# Troubleshooting Guide — claude-code-dock
 
 For architecture details, see [Architecture](architecture.md). For Docker commands reference, see [Docker Reference](docker.md).
 
@@ -410,7 +410,7 @@ If you need to report a bug, collect this information:
 
 ```bash
 #!/bin/bash
-echo "=== ClaudeCodeDock Debug Info ==="
+echo "=== claude-code-dock Debug Info ==="
 echo "Date: $(date)"
 echo ""
 echo "=== Docker Version ==="

@@ -17,7 +17,7 @@ RESET='\033[0m'
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             ClaudeCodeDock — Restore                    ║${RESET}"
+    echo -e "${CYAN}${BOLD}║             claude-code-dock — Restore                    ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }

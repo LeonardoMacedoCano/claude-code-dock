@@ -23,7 +23,7 @@ fi
 
 echo ""
 echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-echo -e "${CYAN}${BOLD}║          ClaudeCodeDock — Claude Code Session           ║${RESET}"
+echo -e "${CYAN}${BOLD}║          claude-code-dock — Claude Code Session           ║${RESET}"
 echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
 echo ""
 echo -e "  ${GREEN}[✓]${RESET} Connecting to container ${BOLD}${CONTAINER_NAME}${RESET}..."

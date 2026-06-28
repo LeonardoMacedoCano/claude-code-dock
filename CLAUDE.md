@@ -1,4 +1,4 @@
-# CLAUDE.md — ClaudeCodeDock
+# CLAUDE.md — claude-code-dock
 
 This document is intended for AIs (like Claude Code itself), developers, and contributors who need to understand the project in depth. Read this file before making any modifications.
 
@@ -6,7 +6,7 @@ This document is intended for AIs (like Claude Code itself), developers, and con
 
 ## Overview
 
-ClaudeCodeDock is a Docker infrastructure solution for running **Claude Code** (`@anthropic-ai/claude-code`) persistently on 24/7 servers — homelab, Unraid, NAS, Proxmox, VPS, or any always-on Linux machine.
+claude-code-dock is a Docker infrastructure solution for running **Claude Code** (`@anthropic-ai/claude-code`) persistently on 24/7 servers — homelab, Unraid, NAS, Proxmox, VPS, or any always-on Linux machine.
 
 **What this project is:**
 - A Dockerfile that packages Claude Code with its dependencies
@@ -146,7 +146,7 @@ Docker Engine processes docker-compose.yml
     ▼
 /usr/local/bin/entrypoint.sh runs (temporary PID 1, user node)
     │
-    ├─ Displays ClaudeCodeDock banner
+    ├─ Displays claude-code-dock banner
     ├─ Displays environment variable configuration
     ├─ Validates: command -v claude (must exist)
     ├─ Displays version: claude --version
@@ -434,7 +434,7 @@ Three well-defined modes are clearer than a combination of boolean flags.
 
 ### 7. Why `CLAUDE_EXTRA_ARGS`?
 
-Allows customization without modifying the entrypoint. The user can add `--model`, `--verbose`, `--debug`, or any future Claude Code flag without needing a new version of ClaudeCodeDock.
+Allows customization without modifying the entrypoint. The user can add `--model`, `--verbose`, `--debug`, or any future Claude Code flag without needing a new version of claude-code-dock.
 
 ---
 

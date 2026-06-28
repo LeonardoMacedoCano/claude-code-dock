@@ -1,10 +1,10 @@
-# Security — ClaudeCodeDock
+# Security — claude-code-dock
 
 For architecture details, see [Architecture](architecture.md). For general setup, see the [README](../README.md).
 
 ## Threat Model
 
-ClaudeCodeDock is designed for use in **personal and homelab environments** — a single user or family on a trusted private network. The threat model is different from a public web application.
+claude-code-dock is designed for use in **personal and homelab environments** — a single user or family on a trusted private network. The threat model is different from a public web application.
 
 **Threats considered:**
 - Unauthorized access to the container via local network
@@ -92,7 +92,7 @@ docker exec claude-code-dock id
 
 ### No exposed ports
 
-By design, ClaudeCodeDock **does not expose any network ports**. Interaction is exclusively via terminal. This eliminates an entire category of network attacks.
+By design, claude-code-dock **does not expose any network ports**. Interaction is exclusively via terminal. This eliminates an entire category of network attacks.
 
 ```yaml
 # docker-compose.yml -- there is no 'ports' section
@@ -196,7 +196,7 @@ ls -la .env
 
 ---
 
-## What ClaudeCodeDock Does NOT Do
+## What claude-code-dock Does NOT Do
 
 It is important to make explicit what this project **does not do** for security and integrity reasons:
 

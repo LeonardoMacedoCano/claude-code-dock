@@ -1,10 +1,10 @@
 FROM node:lts-bookworm
 
-LABEL maintainer="ClaudeCodeDock Contributors"
+LABEL maintainer="claude-code-dock Contributors"
 LABEL description="Claude Code running persistently in Docker for homelab servers"
-LABEL org.opencontainers.image.title="ClaudeCodeDock"
+LABEL org.opencontainers.image.title="claude-code-dock"
 LABEL org.opencontainers.image.description="Persistent Claude Code environment for 24/7 servers"
-LABEL org.opencontainers.image.source="https://github.com/LeonardoMacedoCano/ClaudeCodeDock"
+LABEL org.opencontainers.image.source="https://github.com/LeonardoMacedoCano/claude-code-dock"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8

@@ -32,7 +32,7 @@ done
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             ClaudeCodeDock — Update                     ║${RESET}"
+    echo -e "${CYAN}${BOLD}║             claude-code-dock — Update                     ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
@@ -142,7 +142,7 @@ check_version() {
 cleanup_old_images() {
     step "Removing unused old Docker images..."
 
-    docker image prune -f --filter "label=org.opencontainers.image.title=ClaudeCodeDock" 2>/dev/null || true
+    docker image prune -f --filter "label=org.opencontainers.image.title=claude-code-dock" 2>/dev/null || true
     ok "Cleanup done."
 }
 

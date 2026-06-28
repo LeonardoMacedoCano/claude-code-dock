@@ -1,8 +1,8 @@
-# Architecture — ClaudeCodeDock
+# Architecture — claude-code-dock
 
 ## Overview
 
-ClaudeCodeDock implements a "persistent process in container" pattern, where Claude Code runs inside a tmux session (PID 1 = tmux) in a Docker container that restarts automatically. The user connects and disconnects via `tmux attach-session` without interrupting the session.
+claude-code-dock implements a "persistent process in container" pattern, where Claude Code runs inside a tmux session (PID 1 = tmux) in a Docker container that restarts automatically. The user connects and disconnects via `tmux attach-session` without interrupting the session.
 
 ```
 +---------------------------------------------------------------+

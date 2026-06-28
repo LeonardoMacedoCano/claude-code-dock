@@ -1,17 +1,17 @@
-# Docker Reference — ClaudeCodeDock
+# Docker Reference — claude-code-dock
 
 For Docker commands reference, see this document. For architecture details, see [Architecture](architecture.md). For troubleshooting, see [Troubleshooting Guide](troubleshooting.md).
 
 ## Core Concepts
 
-Before using ClaudeCodeDock, it helps to understand how Docker containers behave in this project.
+Before using claude-code-dock, it helps to understand how Docker containers behave in this project.
 
 ### Container as a "Persistent Server"
 
-In many projects, containers are ephemeral — created, used, and discarded. In ClaudeCodeDock, the container is treated as a persistent server, similar to a system service:
+In many projects, containers are ephemeral — created, used, and discarded. In claude-code-dock, the container is treated as a persistent server, similar to a system service:
 
 ```
-Conventional server:       ClaudeCodeDock:
+Conventional server:       claude-code-dock:
 +------------------+       +------------------------------+
 |  systemd service |       |  Docker container            |
 |  nginx (PID 1)   |  ~=   |  tmux (PID 1)                |
@@ -96,7 +96,7 @@ docker compose up -d --force-recreate
 
 ## Volume Management
 
-### ClaudeCodeDock volumes
+### claude-code-dock volumes
 
 The project uses two main volumes:
 
