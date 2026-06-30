@@ -11,6 +11,8 @@ services:
       - TZ=${TZ:-UTC}
       - GIT_USER_NAME=${GIT_USER_NAME:-}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GIT_REPO_URL=${GIT_REPO_URL:-}
       - TERM=xterm-256color
       - LANG=C.UTF-8
       - LC_ALL=C.UTF-8

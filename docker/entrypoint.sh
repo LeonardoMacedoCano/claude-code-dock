@@ -108,6 +108,27 @@ if [ -n "${GIT_USER_EMAIL:-}" ]; then
         log_info "Git user.email: ${GIT_USER_EMAIL}"
 fi
 
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    git config --global credential.helper store
+    echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > "${HOME}/.git-credentials"
+    chmod 600 "${HOME}/.git-credentials"
+    log_info "GitHub token: configured"
+fi
+
+if [ -n "${GIT_REPO_URL:-}" ]; then
+    WORKSPACE_EMPTY=$(find /workspace -mindepth 1 -maxdepth 1 2>/dev/null | head -1)
+    if [ -z "${WORKSPACE_EMPTY}" ]; then
+        log_step "Cloning repository into /workspace..."
+        if git clone "${GIT_REPO_URL}" /workspace 2>&1 | while IFS= read -r line; do log_info "${line}"; done; then
+            log_info "Repository cloned: ${GIT_REPO_URL}"
+        else
+            log_warn "Failed to clone repository: ${GIT_REPO_URL}"
+        fi
+    else
+        log_info "GIT_REPO_URL set but /workspace is not empty — skipping clone."
+    fi
+fi
+
 if [ "${CLAUDE_AUTO_APPROVE:-true}" = "true" ]; then
     SETTINGS_FILE="${HOME}/.claude/settings.json"
     if [ -f "${SETTINGS_FILE}" ]; then
