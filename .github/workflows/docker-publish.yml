@@ -79,7 +79,11 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan pushed image for vulnerabilities
-        uses: aquasecurity/trivy-action@v0.28.0
+        # Pinned to a release that pins its own aquasecurity/setup-trivy
+        # dependency by commit SHA rather than by tag -- v0.28.0 pinned
+        # setup-trivy@v0.2.1, which aquasecurity later deleted upstream,
+        # breaking this job with an unrelated "unable to find version" error.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: table
