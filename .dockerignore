@@ -1,0 +1,20 @@
+# Credentials and sensitive data — never include in Docker build context
+config/
+.env
+.env.*
+
+# User projects and generated artifacts
+workspaces/
+backups/
+
+# Version control
+.git/
+
+# Development tooling
+.omc/
+tests/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+*.log

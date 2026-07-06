@@ -27,7 +27,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ARG CLAUDE_CODE_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} --no-update-notifier
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} --no-update-notifier && \
+    grep '"version"' /usr/local/lib/node_modules/@anthropic-ai/claude-code/package.json \
+        | head -1 | awk -F'"' '{print $4}' \
+        > /etc/claude-code-version 2>/dev/null || echo "unknown" > /etc/claude-code-version
 
 RUN mkdir -p /workspace && chown node:node /workspace
 
@@ -44,6 +47,6 @@ USER node
 VOLUME ["/home/node/.claude"]
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD kill -0 1 2>/dev/null || exit 1
+    CMD tmux has-session -t main 2>/dev/null || kill -0 1 2>/dev/null || exit 1
 
 ENTRYPOINT ["/bin/bash", "/usr/local/bin/entrypoint.sh"]

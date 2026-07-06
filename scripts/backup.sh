@@ -169,9 +169,13 @@ create_backup_archive() {
     done
 
     if [ "${INCLUDE_WORKSPACE}" == "true" ] && [ -n "${WORKSPACE_PATH}" ] && [ -d "${WORKSPACE_PATH}" ]; then
-        tar -czf "${BACKUP_FILE}" "${INCLUDE_ITEMS[@]+"${INCLUDE_ITEMS[@]}"}" \
-            -C "$(dirname "${WORKSPACE_PATH}")" "$(basename "${WORKSPACE_PATH}")" 2>/dev/null || \
-        tar "${TAR_ARGS[@]}" 2>/dev/null
+        if [ ${#INCLUDE_ITEMS[@]} -gt 0 ]; then
+            tar -czf "${BACKUP_FILE}" "${INCLUDE_ITEMS[@]}" \
+                -C "$(dirname "${WORKSPACE_PATH}")" "$(basename "${WORKSPACE_PATH}")"
+        else
+            tar -czf "${BACKUP_FILE}" \
+                -C "$(dirname "${WORKSPACE_PATH}")" "$(basename "${WORKSPACE_PATH}")"
+        fi
     else
         if [ ${#INCLUDE_ITEMS[@]} -gt 0 ]; then
             tar "${TAR_ARGS[@]}"
@@ -185,12 +189,19 @@ create_backup_archive() {
 manage_old_backups() {
     step "Checking existing backups..."
 
-    BACKUP_COUNT=$(ls -1 "${OUTPUT_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | wc -l)
-    ok "Total backups in ${OUTPUT_DIR}: ${BACKUP_COUNT}"
+    RETENTION=10
+    if [ -f "${ENV_FILE}" ]; then
+        ENV_RETENTION=$(grep "^BACKUP_RETENTION=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+        [ -n "${ENV_RETENTION}" ] && RETENTION="${ENV_RETENTION}"
+    fi
+    RETENTION="${BACKUP_RETENTION:-${RETENTION}}"
 
-    if [ "${BACKUP_COUNT}" -gt 10 ]; then
-        warn "More than 10 backups found. Removing oldest ones..."
-        ls -1t "${OUTPUT_DIR}"/claude-code-dock-backup-*.tar.gz | tail -n +11 | xargs rm -f
+    BACKUP_COUNT=$(ls -1 "${OUTPUT_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | wc -l)
+    ok "Total backups in ${OUTPUT_DIR}: ${BACKUP_COUNT} (retention: ${RETENTION})"
+
+    if [ "${BACKUP_COUNT}" -gt "${RETENTION}" ]; then
+        warn "More than ${RETENTION} backups found. Removing oldest ones..."
+        ls -1t "${OUTPUT_DIR}"/claude-code-dock-backup-*.tar.gz | tail -n +"$((RETENTION + 1))" | xargs rm -f
         ok "Old backups removed."
     fi
 }

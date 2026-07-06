@@ -184,6 +184,7 @@ volumes:
 | `TZ` | `UTC` | Timezone |
 | `GIT_USER_NAME` | `` | Name for git commits |
 | `GIT_USER_EMAIL` | `` | Email for git commits |
+| `BACKUP_RETENTION` | `10` | Number of backups to keep; oldest are removed automatically |
 
 ### Mode resolution
 

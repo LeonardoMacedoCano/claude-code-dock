@@ -74,3 +74,16 @@ _create_old_backups() {
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+@test "respects BACKUP_RETENTION env var when set to a custom value" {
+  _create_old_backups 6
+  export BACKUP_RETENTION=5
+
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+
+  # After: 6 old + 1 new = 7 total; prune to 5.
+  REMAINING="$(ls "$TMP_PROJECT/backups"/claude-code-dock-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$REMAINING" -eq 5 ]
+  unset BACKUP_RETENTION
+}

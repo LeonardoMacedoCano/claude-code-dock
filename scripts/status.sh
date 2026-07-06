@@ -72,7 +72,7 @@ echo ""
 # --- Claude Code ---
 if [ "${CONTAINER_STATUS}" = "running" ]; then
     echo -e "  ${CYAN}Claude Code${RESET}"
-    CLAUDE_VERSION=$(docker exec "${CONTAINER_NAME}" claude --version 2>/dev/null || echo "unavailable")
+    CLAUDE_VERSION=$(docker exec "${CONTAINER_NAME}" cat /etc/claude-code-version 2>/dev/null || echo "unavailable")
     row "Version:" "${CLAUDE_VERSION}"
 
     MODE_ENV=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null \
