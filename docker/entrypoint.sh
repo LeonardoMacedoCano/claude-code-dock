@@ -316,6 +316,11 @@ case "${MODE}" in
         if [ "${CLAUDE_AUTO_APPROVE:-true}" = "true" ]; then
             CMD_ARGS+=("--dangerously-skip-permissions")
         fi
+        # --continue reconnects to the Remote Control session recorded in the
+        # most recent /workspace conversation instead of registering a brand
+        # new one — without it, every container restart piles up another
+        # dead entry with the same name in the claude.ai/code session list.
+        CMD_ARGS+=("--continue")
         if [ -n "${REMOTE_SESSION_NAME:-}" ]; then
             CMD_ARGS+=("--remote-control" "${REMOTE_SESSION_NAME}")
         else
