@@ -5,7 +5,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 DEFAULT_BACKUP_DIR="${PROJECT_DIR}/backups"
-CONTAINER_NAME="claude-code-dock"
+ENV_FILE="${PROJECT_DIR}/.env"
+
+if [ -f "${ENV_FILE}" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+    set +a
+fi
+CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

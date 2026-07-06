@@ -2,7 +2,17 @@
 
 set -euo pipefail
 
-CONTAINER_NAME="claude-code-dock"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
+ENV_FILE="${PROJECT_DIR}/.env"
+
+if [ -f "${ENV_FILE}" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+    set +a
+fi
+CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 TAIL_LINES=50
 FOLLOW=true
 SINCE=""

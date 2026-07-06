@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
+ENV_FILE="${PROJECT_DIR}/.env"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+if [ -f "${ENV_FILE}" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+    set +a
+fi
+CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
+
+header() {
+    echo ""
+    echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
+    echo -e "${CYAN}${BOLD}║             claude-code-dock — Status                     ║${RESET}"
+    echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
+    echo ""
+}
+
+row() {
+    local label="$1"
+    local value="$2"
+    local color="${3:-${RESET}}"
+    printf "  ${BOLD}%-22s${RESET} ${color}%s${RESET}\n" "${label}" "${value}"
+}
+
+header
+
+# --- Container ---
+echo -e "  ${CYAN}Container${RESET}"
+
+CONTAINER_STATUS=$(docker inspect --format '{{.State.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "not found")
+CONTAINER_HEALTH=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no healthcheck{{end}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
+CONTAINER_UPTIME=$(docker inspect --format '{{.State.StartedAt}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
+
+case "${CONTAINER_STATUS}" in
+    running)   STATUS_COLOR="${GREEN}" ;;
+    exited)    STATUS_COLOR="${RED}" ;;
+    *)         STATUS_COLOR="${YELLOW}" ;;
+esac
+
+row "Container name:" "${CONTAINER_NAME}"
+row "Status:" "${CONTAINER_STATUS}" "${STATUS_COLOR}"
+
+if [ -n "${CONTAINER_HEALTH}" ] && [ "${CONTAINER_HEALTH}" != "no healthcheck" ]; then
+    case "${CONTAINER_HEALTH}" in
+        healthy)   HEALTH_COLOR="${GREEN}" ;;
+        unhealthy) HEALTH_COLOR="${RED}" ;;
+        *)         HEALTH_COLOR="${YELLOW}" ;;
+    esac
+    row "Health:" "${CONTAINER_HEALTH}" "${HEALTH_COLOR}"
+fi
+
+if [ -n "${CONTAINER_UPTIME}" ] && [ "${CONTAINER_STATUS}" = "running" ]; then
+    row "Started at:" "${CONTAINER_UPTIME}"
+fi
+
+echo ""
+
+# --- Claude Code ---
+if [ "${CONTAINER_STATUS}" = "running" ]; then
+    echo -e "  ${CYAN}Claude Code${RESET}"
+    CLAUDE_VERSION=$(docker exec "${CONTAINER_NAME}" claude --version 2>/dev/null || echo "unavailable")
+    row "Version:" "${CLAUDE_VERSION}"
+
+    MODE_ENV=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null \
+        | grep "^AUTO_START_MODE=" | cut -d= -f2 || echo "unknown")
+    row "Mode:" "${MODE_ENV:-interactive}"
+
+    AUTO_APPROVE=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null \
+        | grep "^CLAUDE_AUTO_APPROVE=" | cut -d= -f2 || echo "unknown")
+    if [ "${AUTO_APPROVE}" = "true" ]; then
+        row "Auto-approve:" "enabled (--dangerously-skip-permissions)" "${YELLOW}"
+    else
+        row "Auto-approve:" "disabled"
+    fi
+
+    echo ""
+fi
+
+# --- Workspace ---
+echo -e "  ${CYAN}Workspace${RESET}"
+WORKSPACE_PATH="${WORKSPACE_PATH:-${PROJECT_DIR}/workspaces}"
+if [ -d "${WORKSPACE_PATH}" ]; then
+    ITEM_COUNT=$(find "${WORKSPACE_PATH}" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+    DISK_USAGE=$(du -sh "${WORKSPACE_PATH}" 2>/dev/null | cut -f1 || echo "?")
+    row "Path:" "${WORKSPACE_PATH}"
+    row "Items:" "${ITEM_COUNT} top-level item(s)"
+    row "Disk usage:" "${DISK_USAGE}"
+else
+    row "Path:" "${WORKSPACE_PATH} (not found)" "${RED}"
+fi
+
+echo ""
+
+# --- Credentials ---
+echo -e "  ${CYAN}Credentials${RESET}"
+CONFIG_PATH="${CONFIG_PATH:-${PROJECT_DIR}/config}"
+CLAUDE_JSON="${CONFIG_PATH}/.claude.json"
+if [ -f "${CLAUDE_JSON}" ]; then
+    row "Login:" "authenticated" "${GREEN}"
+    row "Config path:" "${CONFIG_PATH}"
+else
+    row "Login:" "not authenticated (first login required)" "${YELLOW}"
+    row "Config path:" "${CONFIG_PATH}"
+fi
+
+echo ""
+
+# --- Backups ---
+echo -e "  ${CYAN}Backups${RESET}"
+BACKUP_DIR="${PROJECT_DIR}/backups"
+if [ -d "${BACKUP_DIR}" ]; then
+    BACKUP_COUNT=$(ls -1 "${BACKUP_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | wc -l)
+    LATEST_BACKUP=$(ls -1t "${BACKUP_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | head -1 || echo "")
+    row "Total backups:" "${BACKUP_COUNT}"
+    if [ -n "${LATEST_BACKUP}" ]; then
+        row "Latest:" "$(basename "${LATEST_BACKUP}")"
+    fi
+else
+    row "Backups:" "none (./backups/ not found)"
+fi
+
+echo ""
+
+# --- Quick commands ---
+if [ "${CONTAINER_STATUS}" = "running" ]; then
+    echo -e "  ${YELLOW}Quick commands${RESET}"
+    echo -e "  Attach:  ${BOLD}./scripts/attach.sh${RESET}"
+    echo -e "  Shell:   ${BOLD}./scripts/shell.sh${RESET}"
+    echo -e "  Logs:    ${BOLD}./scripts/logs.sh${RESET}"
+    echo -e "  Backup:  ${BOLD}./scripts/backup.sh${RESET}"
+    echo ""
+fi

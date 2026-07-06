@@ -7,7 +7,7 @@ PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 COMPOSE_FILE="${PROJECT_DIR}/docker-compose.yml"
 ENV_FILE="${PROJECT_DIR}/.env"
 ENV_EXAMPLE="${PROJECT_DIR}/.env.example"
-CONTAINER_NAME="claude-code-dock"
+CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -105,6 +105,7 @@ check_env() {
     # shellcheck disable=SC1090
     source "${ENV_FILE}"
     set +a
+    CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 
     ok ".env file loaded."
 
@@ -165,6 +166,17 @@ build_image() {
     ok "Image built successfully."
 }
 
+wait_for_container() {
+    local deadline=$((SECONDS + 30))
+    while [ $SECONDS -lt $deadline ]; do
+        if [ "$(docker inspect --format '{{.State.Running}}' "${CONTAINER_NAME}" 2>/dev/null)" = "true" ]; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 start_services() {
     step "Starting claude-code-dock..."
 
@@ -173,9 +185,7 @@ start_services() {
 
     ok "Container started."
 
-    sleep 2
-
-    if docker ps --filter "name=${CONTAINER_NAME}" --filter "status=running" | grep -q "${CONTAINER_NAME}"; then
+    if wait_for_container; then
         ok "Container ${BOLD}${CONTAINER_NAME}${RESET} is running."
     else
         warn "Container may not have started correctly."

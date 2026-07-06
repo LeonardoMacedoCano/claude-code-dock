@@ -90,7 +90,7 @@ setup_output_dir() {
     ok "Backup directory ready."
 }
 
-backup_config() {
+check_config() {
     step "Checking configuration (./config/)..."
 
     CONFIG_DIR="${PROJECT_DIR}/config"
@@ -106,6 +106,18 @@ backup_config() {
     fi
 
     ok "Configuration found in: ${CONFIG_DIR}"
+}
+
+backup_env() {
+    if [ ! -f "${ENV_FILE}" ]; then
+        return
+    fi
+
+    step "Backing up .env (secrets masked)..."
+
+    local env_backup="${OUTPUT_DIR}/${BACKUP_NAME}.env.backup"
+    grep -vE "^(GITHUB_TOKEN|CLAUDE_API_KEY)\s*=" "${ENV_FILE}" > "${env_backup}" 2>/dev/null || true
+    ok ".env backed up (GITHUB_TOKEN and secrets excluded): $(basename "${env_backup}")"
 }
 
 load_workspace_path() {
@@ -199,7 +211,8 @@ print_result() {
 main() {
     header
     setup_output_dir
-    backup_config
+    check_config
+    backup_env
     load_workspace_path
     create_backup_archive
     manage_old_backups

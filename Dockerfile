@@ -26,7 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code --no-update-notifier
+ARG CLAUDE_CODE_VERSION=latest
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} --no-update-notifier
 
 RUN mkdir -p /workspace && chown node:node /workspace
 
@@ -41,5 +42,8 @@ ENV HOME=/home/node
 USER node
 
 VOLUME ["/home/node/.claude"]
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD kill -0 1 2>/dev/null || exit 1
 
 ENTRYPOINT ["/bin/bash", "/usr/local/bin/entrypoint.sh"]

@@ -3,6 +3,8 @@ services:
     container_name: ${CONTAINER_NAME:-claude-code-dock}
     build:
       context: ${CLAUDE_SOURCE_PATH:-.}
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:
       - AUTO_START_MODE=${AUTO_START_MODE:-interactive}
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-true}

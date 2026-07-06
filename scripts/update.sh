@@ -5,8 +5,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 COMPOSE_FILE="${PROJECT_DIR}/docker-compose.yml"
-CONTAINER_NAME="claude-code-dock"
+ENV_FILE="${PROJECT_DIR}/.env"
 SKIP_BACKUP=false
+
+if [ -f "${ENV_FILE}" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+    set +a
+fi
+CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -117,15 +125,24 @@ rebuild_image() {
     ok "Image rebuilt successfully."
 }
 
+wait_for_container() {
+    local deadline=$((SECONDS + 30))
+    while [ $SECONDS -lt $deadline ]; do
+        if [ "$(docker inspect --format '{{.State.Running}}' "${CONTAINER_NAME}" 2>/dev/null)" = "true" ]; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
 start_container() {
     step "Starting updated container..."
 
     cd "${PROJECT_DIR}"
     ${COMPOSE_CMD} -f "${COMPOSE_FILE}" up -d
 
-    sleep 3
-
-    if docker ps --filter "name=${CONTAINER_NAME}" --filter "status=running" | grep -q "${CONTAINER_NAME}"; then
+    if wait_for_container; then
         ok "Container ${BOLD}${CONTAINER_NAME}${RESET} updated and running."
     else
         fail "Container did not start after update. Check logs: ./scripts/logs.sh"
