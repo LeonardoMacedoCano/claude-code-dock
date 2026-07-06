@@ -49,7 +49,7 @@ One server can run any number of containers, each with its own project and sessi
 
 ## Setup
 
-No local clone of this repository is required — `docker compose build` fetches the source directly from GitHub. You only need two files on your server: `docker-compose.yml` and `.env`.
+No local clone of this repository is required — `docker compose pull` fetches the prebuilt, CI-published image directly from GHCR. You only need two files on your server: `docker-compose.yml` and `.env`.
 
 ### 1. Create a project folder
 
@@ -79,17 +79,17 @@ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ```
 
-Leave `CLAUDE_SOURCE_PATH` empty (default) so the image builds from GitHub — pin a version with `CLAUDE_DOCK_VERSION` if needed. Only set `CLAUDE_SOURCE_PATH` if you have a local clone of claude-code-dock you want to build from instead.
+Leave `CLAUDE_SOURCE_PATH` empty (default) so `docker compose pull` fetches the prebuilt image from GHCR — pin a version with `CLAUDE_DOCK_IMAGE` (e.g. a specific tag) if needed. Only set `CLAUDE_SOURCE_PATH` if you have a local clone of claude-code-dock you want to build from instead.
 
-### 3. Build and start
+### 3. Pull and start
 
 ```bash
 cd /srv/projects/homepage
-docker compose build
+docker compose pull
 docker compose up -d
 ```
 
-> Prefer the convenience scripts (`install.sh`, `attach.sh`, `backup.sh`, ...)? Clone the repository instead — see [Scripts](#scripts) below. The scripts still work with `CLAUDE_SOURCE_PATH` unset, since the build itself no longer needs a local clone.
+> Prefer the convenience scripts (`install.sh`, `attach.sh`, `backup.sh`, ...)? Clone the repository instead — see [Scripts](#scripts) below. The scripts still work with `CLAUDE_SOURCE_PATH` unset, since they pull the prebuilt image rather than needing a local clone.
 
 ### 4. First login (only once, for the first container)
 
@@ -108,8 +108,9 @@ For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PAT
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CONTAINER_NAME` | `claude-code-dock` | Docker container name — must be unique per container on the same host |
-| `CLAUDE_DOCK_VERSION` | `main` | Branch/tag of claude-code-dock to build from GitHub |
-| `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to build from instead of GitHub (advanced) |
+| `CLAUDE_DOCK_IMAGE` | `ghcr.io/leonardomacedocano/claude-code-dock:latest` | Prebuilt image pulled by default — override to pin a tag or use your own fork's registry |
+| `CLAUDE_DOCK_VERSION` | `main` | Branch/tag of claude-code-dock to build from, when building instead of pulling |
+| `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to build from instead of pulling the prebuilt image (advanced) |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories — share this across all containers |
 | `REMOTE_SESSION_NAME` | `` | Unique session ID — credentials stored at `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` |
 | `WORKSPACE_PATH` | `./workspaces` | This container's project folder |
@@ -162,12 +163,13 @@ GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ```bash
 ./scripts/install.sh      # Guided initial setup
 ./scripts/new-session.sh  # Create a new isolated session (.env.<name>)
+./scripts/session-up.sh   # Start a session by name (binds .env.<name> + its own Compose project)
 ./scripts/sessions.sh     # List all claude-code-dock containers and their status
 ./scripts/attach.sh       # Attach to the tmux session where Claude is running
 ./scripts/shell.sh        # Open a separate bash shell in the container
 ./scripts/logs.sh         # Stream container logs (--app for the persistent startup log)
 ./scripts/status.sh       # Show status, credentials, workspace, and backups for a session
-./scripts/update.sh       # Rebuild with latest Claude Code, restart
+./scripts/update.sh       # Pull latest Claude Code image (or rebuild if CLAUDE_SOURCE_PATH is set), restart
 ./scripts/backup.sh       # Backup credentials and workspace
 ./scripts/restore.sh      # Restore from a backup
 ./scripts/claude.sh       # Run Claude via docker exec (separate session)

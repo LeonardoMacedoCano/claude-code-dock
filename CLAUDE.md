@@ -185,8 +185,9 @@ volumes:
 | `AUTO_START_MODE` | `interactive` | Execution mode: `interactive`, `remote`, `shell` |
 | `CLAUDE_AUTO_APPROVE` | `true` | Enables `--dangerously-skip-permissions` (interactive mode) |
 | `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command |
-| `CLAUDE_DOCK_VERSION` | `main` | Branch/tag of claude-code-dock to build the image from GitHub (build context ref) |
-| `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to use as build context instead of GitHub (advanced/dev use) |
+| `CLAUDE_DOCK_IMAGE` | `ghcr.io/leonardomacedocano/claude-code-dock:latest` | Prebuilt image `docker compose pull` fetches by default |
+| `CLAUDE_DOCK_VERSION` | `main` | Branch/tag to build from when not pulling the prebuilt image (build context ref) |
+| `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to use as build context instead of pulling/GitHub (advanced/dev use) |
 | `WORKSPACE_PATH` | `./workspaces` | Path to projects on the host |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories |
 | `REMOTE_SESSION_NAME` | `` | **Required.** Unique session ID — isolates config, names backups, prevents duplicate containers |
@@ -300,11 +301,13 @@ tmux new-session -s main claude --dangerously-skip-permissions
 - `stdin_open: true` and `tty: true`: required for Claude Code TUI
 - `restart: unless-stopped`: automatic restart without blocking manual stops
 - `container_name: ${CONTAINER_NAME:-claude-code-dock}`: name driven by `.env`; scripts depend on a stable, known name
+- `image: ${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest}` + `build:`: both present intentionally — `image:` is what `docker compose pull` (the default install/update path) fetches; `build:` is the fallback path used when `CLAUDE_SOURCE_PATH` is set or someone explicitly runs `docker compose build`
 
 **What NOT to change without good reason:**
 - Do not remove `stdin_open` or `tty` (breaks the interface)
 - Do not change to `restart: always` (prevents manual maintenance)
 - Do not change the `container_name` default or remove the `CONTAINER_NAME` variable (breaks all scripts when the variable is unset)
+- Do not remove `image:` in favor of `build:`-only (breaks the pull-first fast path in `install.sh`/`update.sh`) or vice versa (breaks `CLAUDE_SOURCE_PATH`-based local dev)
 
 ---
 
@@ -356,11 +359,11 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 1. Check current status
 2. Create backup (unless `--skip-backup`)
 3. Stop the container
-4. `docker compose build --no-cache` (ensures latest Claude Code version)
+4. `docker compose pull` (fetches the latest published image), falling back to `docker compose build --no-cache` if `CLAUDE_SOURCE_PATH` is set or the pull fails
 5. `docker compose up -d`
 6. Verify the container is running
 
-**Why `--no-cache`:** `npm install -g @anthropic-ai/claude-code` without cache always fetches the latest version. With cache, Docker may reuse an old layer with an outdated version.
+**Why pull, not build, by default:** the published image is rebuilt in CI (weekly, and on every push to `main`) with a cache-busting build arg on the `npm install -g @anthropic-ai/claude-code` layer specifically, so it never serves a stale version from the GitHub Actions layer cache — see `.github/workflows/docker-publish.yml`. Pulling that image is faster than rebuilding locally and gets the same freshness guarantee. `--no-cache` remains necessary for the local-build fallback path, for the same cache-staleness reason.
 
 ---
 

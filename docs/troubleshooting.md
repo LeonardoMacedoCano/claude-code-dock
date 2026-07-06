@@ -67,11 +67,13 @@ Error response from daemon: invalid mount config for type "bind": bind source pa
 mkdir -p /your/workspace/path
 ```
 
-**C) Image was not built:**
+**C) Image was not pulled/built yet:**
 ```
-Unable to find image 'claude-code-dock:latest' locally
+Unable to find image 'ghcr.io/leonardomacedocano/claude-code-dock:latest' locally
 ```
 ```bash
+docker compose pull
+# or, if CLAUDE_SOURCE_PATH is set:
 docker compose build
 ```
 
@@ -93,20 +95,21 @@ docker logs claude-code-dock
 ✗ FATAL: Claude Code binary missing
 ```
 ```bash
-# Rebuild image without cache
-docker compose build --no-cache
+# Re-pull the image (or rebuild without cache if CLAUDE_SOURCE_PATH is set)
+docker compose pull
 docker compose up -d
 ```
 
 **Cause B — Entrypoint permission problem:**
 ```bash
-# Check entrypoint permissions
+# Check entrypoint permissions (use your local image name here if you built
+# with CLAUDE_SOURCE_PATH instead of pulling)
 docker run --rm --entrypoint ls \
-  claude-code-dock_claude-code-dock \
+  ghcr.io/leonardomacedocano/claude-code-dock:latest \
   -la /usr/local/bin/entrypoint.sh
 
-# If needed, rebuild
-docker compose build --no-cache
+# If needed, re-pull (or rebuild without cache if building locally)
+docker compose pull
 ```
 
 ---
@@ -443,9 +446,22 @@ df -h /your/workspace/
 
 ---
 
-## Build Problems
+## Pull / Build Problems
+
+### Pull fails — registry unreachable or rate-limited
+
+```bash
+# Try again (may be temporary instability or an anonymous GHCR rate limit)
+docker compose pull
+
+# Fall back to building from source for this run
+docker compose build
+docker compose up -d
+```
 
 ### Build fails — npm error
+
+Only relevant if `CLAUDE_SOURCE_PATH` is set (building locally instead of pulling):
 
 ```bash
 # Clear Docker cache and rebuild

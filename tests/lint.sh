@@ -19,6 +19,7 @@ SHELL_FILES=(
   "$PROJECT_DIR/docker/claude-console.sh"
   "$PROJECT_DIR/scripts/install.sh"
   "$PROJECT_DIR/scripts/new-session.sh"
+  "$PROJECT_DIR/scripts/session-up.sh"
   "$PROJECT_DIR/scripts/sessions.sh"
   "$PROJECT_DIR/scripts/status.sh"
   "$PROJECT_DIR/scripts/update.sh"
@@ -59,6 +60,31 @@ else
     echo -e "  ${GREEN}✓${RESET} Dockerfile"
   else
     echo -e "  ${RED}✗${RESET} Dockerfile"
+    ERRORS=$((ERRORS + 1))
+  fi
+fi
+
+echo ""
+echo -e "${CYAN}[→]${RESET} ${BOLD}docker compose config${RESET}"
+
+if docker compose version &>/dev/null 2>&1; then
+  COMPOSE_CMD="docker compose"
+elif command -v docker-compose &>/dev/null; then
+  COMPOSE_CMD="docker-compose"
+else
+  COMPOSE_CMD=""
+fi
+
+if [ -z "$COMPOSE_CMD" ]; then
+  echo -e "  ${YELLOW}⚠${RESET} docker compose not found — install Docker to validate docker-compose.yml"
+else
+  # Every variable in docker-compose.yml has a `:-default` fallback, so this
+  # must resolve cleanly with no .env and no exported vars at all -- a bare
+  # syntax/interpolation error here is the actual regression this guards.
+  if $COMPOSE_CMD -f "$PROJECT_DIR/docker-compose.yml" config --quiet 2>&1; then
+    echo -e "  ${GREEN}✓${RESET} docker-compose.yml"
+  else
+    echo -e "  ${RED}✗${RESET} docker-compose.yml"
     ERRORS=$((ERRORS + 1))
   fi
 fi

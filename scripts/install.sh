@@ -201,15 +201,26 @@ setup_directories() {
 }
 
 build_image() {
-    step "Building Docker image..."
-    echo ""
-    echo -e "  ${YELLOW}This may take a few minutes on first run...${RESET}"
-    echo ""
-
     cd "${PROJECT_DIR}"
-    ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build
 
-    ok "Image built successfully."
+    if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
+        step "Building Docker image from local source (CLAUDE_SOURCE_PATH set)..."
+        echo ""
+        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build
+        ok "Image built successfully."
+        return
+    fi
+
+    step "Pulling prebuilt Docker image..."
+    echo ""
+    if ${COMPOSE_CMD} -f "${COMPOSE_FILE}" pull; then
+        ok "Image pulled successfully."
+    else
+        warn "Pull failed — building from GitHub source instead (this may take a few minutes)..."
+        echo ""
+        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build
+        ok "Image built successfully."
+    fi
 }
 
 wait_for_container() {
@@ -252,7 +263,7 @@ print_next_steps() {
     echo -e "     ${BOLD}./scripts/attach.sh${RESET}"
     echo ""
     echo -e "  ${CYAN}2.${RESET} Log in when prompted by Claude Code."
-    echo -e "     Credentials are saved in ${BOLD}./config/${RESET} and persist across restarts."
+    echo -e "     Credentials are saved in ${BOLD}${CONFIG_DIR}${RESET} and persist across restarts."
     echo ""
     echo -e "  ${CYAN}3.${RESET} To disconnect without stopping Claude:"
     echo -e "     Press ${BOLD}Ctrl+B${RESET} then ${BOLD}D${RESET}"

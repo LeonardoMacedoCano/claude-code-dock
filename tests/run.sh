@@ -41,6 +41,9 @@ BATS_FILES=(
   "$SCRIPT_DIR/entrypoint_settings.bats"
   "$SCRIPT_DIR/entrypoint_shared_config.bats"
   "$SCRIPT_DIR/backup_retention.bats"
+  "$SCRIPT_DIR/healthcheck.bats"
+  "$SCRIPT_DIR/status_update_check.bats"
+  "$SCRIPT_DIR/session_up.bats"
 )
 
 BATS_ERRORS=0

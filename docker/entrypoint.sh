@@ -335,7 +335,7 @@ case "${MODE}" in
         echo -e "  ${BOLD}Debug shell:${RESET}    ${CYAN}./scripts/shell.sh${RESET}"
         echo ""
         echo -e "  ${BOLD}First use:${RESET} Claude Code will prompt for authentication."
-        echo -e "  Credentials saved in ${CYAN}./config/${RESET} and persist across restarts."
+        echo -e "  Credentials saved in ${CYAN}CONFIG_BASE_PATH/REMOTE_SESSION_NAME${RESET} and persist across restarts."
         ;;
 esac
 

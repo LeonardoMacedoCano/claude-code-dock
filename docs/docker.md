@@ -211,13 +211,19 @@ It is capped at ~2000 lines and trimmed automatically on each container start.
 
 ## Build and Image Update
 
-### Initial build
+### Initial setup
+
+By default, `install.sh` (and a plain `docker compose pull`) fetch the
+prebuilt, CI-published image from `ghcr.io/leonardomacedocano/claude-code-dock`
+instead of building locally — no `apt-get`/`npm install` on your machine:
 
 ```bash
-# Build the local image
-docker compose build
+# Pull the prebuilt image (default path)
+docker compose pull
 
-# Build without cache (forces Claude Code reinstall)
+# Build locally instead (only needed with CLAUDE_SOURCE_PATH set, or if you
+# want to test an unreleased change to claude-code-dock itself)
+docker compose build
 docker compose build --no-cache
 ```
 
@@ -226,15 +232,22 @@ docker compose build --no-cache
 To update to the latest version of Claude Code:
 
 ```bash
-# Via script (recommended -- backs up first)
+# Via script (recommended -- backs up first, pulls by default)
 ./scripts/update.sh
 
 # Manually
-docker compose build --no-cache
+docker compose pull
 docker compose up -d
 ```
 
-The `--no-cache` flag ensures npm downloads and installs the latest version of `@anthropic-ai/claude-code`.
+The published image is rebuilt weekly (and on every push to `main`) with a
+cache-busting build arg specifically for the `npm install -g
+@anthropic-ai/claude-code` layer, so `docker compose pull` reliably gets a
+recent Claude Code release without waiting on a claude-code-dock commit.
+
+If `CLAUDE_SOURCE_PATH` is set (local development of claude-code-dock itself),
+`update.sh` falls back to `docker compose build --no-cache`, which forces a
+fresh npm install in that local build too.
 
 ### Inspect the built image
 
@@ -257,10 +270,14 @@ docker exec claude-code-dock cat /etc/os-release
 ## Multiple Instances
 
 The recommended way to run multiple instances is `./scripts/new-session.sh`
-(one container + `.env.<name>` per project, sharing a single `CONFIG_BASE_PATH`)
-and `./scripts/sessions.sh` to list them — see [README: Scripts](../README.md#scripts).
-The manual approach below (one hand-written compose file with several
-services) still works if you'd rather not use the helper scripts:
+(one container + `.env.<name>` per project, sharing a single `CONFIG_BASE_PATH`),
+`./scripts/session-up.sh <name>` to start one (it pins `--env-file .env.<name>`
+and a matching `-p claude-<name>` Compose project name, so you can't
+accidentally start session B under session A's `.env` by forgetting the flag),
+and `./scripts/sessions.sh` to list them all — see
+[README: Scripts](../README.md#scripts). The manual approach below (one
+hand-written compose file with several services) still works if you'd rather
+not use the helper scripts:
 
 ```yaml
 # Modified docker-compose.yml for multiple projects
@@ -343,6 +360,8 @@ and see [Troubleshooting: Container restart loop](troubleshooting.md#container-r
 
 ```bash
 # Test without config volume (clears state)
+# Use ghcr.io/leonardomacedocano/claude-code-dock:latest instead if you're on
+# the default (pulled, not locally built) image.
 docker run --rm -it \
   --user node \
   -v "${WORKSPACE_PATH:-./workspaces}:/workspace" \
@@ -404,7 +423,7 @@ docker compose restart
 # Update image
 ./scripts/update.sh
 # or manually:
-docker compose build --no-cache && docker compose up -d
+docker compose pull && docker compose up -d
 
 # Remove container (preserves volumes/data)
 docker compose down

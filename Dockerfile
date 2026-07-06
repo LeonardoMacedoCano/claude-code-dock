@@ -27,7 +27,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ARG CLAUDE_CODE_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} --no-update-notifier && \
+# CACHEBUST is unused by npm but referenced in the RUN line below so changing
+# it invalidates Docker's layer cache for this instruction. Needed because CI
+# (docker-publish.yml) builds with a persistent GitHub Actions cache — without
+# this, @${CLAUDE_CODE_VERSION}=latest would resolve once and then get served
+# from cache indefinitely, never picking up newer Claude Code releases.
+ARG CACHEBUST=1
+RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
+    npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} --no-update-notifier && \
     grep '"version"' /usr/local/lib/node_modules/@anthropic-ai/claude-code/package.json \
         | head -1 | awk -F'"' '{print $4}' \
         > /etc/claude-code-version 2>/dev/null || echo "unknown" > /etc/claude-code-version
@@ -46,11 +53,17 @@ USER node
 
 VOLUME ["/home/node/.claude"]
 
+# Shell mode: PID 1 must actually be bash (not just "some process alive" --
+# kill -0 1 is trivially true for the whole container lifetime and catches
+# nothing). Interactive/remote: the tmux session must exist AND its pane must
+# not be dead -- a crashed/exited claude process leaves the session up with a
+# dead pane, which a bare `tmux has-session` check would report as healthy.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD if [ "${AUTO_START_MODE:-interactive}" = "shell" ]; then \
-            kill -0 1 2>/dev/null || exit 1; \
+            [ "$(ps -p 1 -o comm= 2>/dev/null)" = "bash" ] || exit 1; \
         else \
             tmux has-session -t main 2>/dev/null || exit 1; \
+            [ "$(tmux list-panes -t main -F '#{pane_dead}' 2>/dev/null | head -1)" = "0" ] || exit 1; \
         fi
 
 ENTRYPOINT ["/bin/bash", "/usr/local/bin/entrypoint.sh"]

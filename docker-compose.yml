@@ -1,6 +1,11 @@
 services:
   claude-code-dock:
     container_name: ${CONTAINER_NAME:-claude-code-dock}
+    # `image:` lets `docker compose pull` fetch the prebuilt, CI-published image
+    # (fast — no local apt-get/npm install). `build:` stays as the fallback path
+    # for CLAUDE_SOURCE_PATH (local dev/testing of claude-code-dock itself) or
+    # `docker compose build` when a prebuilt image isn't available/desired.
+    image: ${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest}
     build:
       context: ${CLAUDE_SOURCE_PATH:-https://github.com/LeonardoMacedoCano/claude-code-dock.git#${CLAUDE_DOCK_VERSION:-main}}
       args:

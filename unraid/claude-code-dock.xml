@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<!--
+Community Applications template for claude-code-dock.
+
+Not yet submitted to the CA repository (Templates3 feed) — see
+docs/unraid.md#community-applications-template for how to use this locally
+today (Docker tab -> Add Container -> Template dropdown -> "Load from URL /
+local XML") and what's needed before submitting it upstream (mainly a hosted
+128x128 <Icon>, currently left empty below).
+-->
+<Container version="2">
+  <Name>claude-code-dock</Name>
+  <Repository>ghcr.io/leonardomacedocano/claude-code-dock:latest</Repository>
+  <Registry>https://github.com/LeonardoMacedoCano/claude-code-dock/pkgs/container/claude-code-dock</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>claude-console</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/LeonardoMacedoCano/claude-code-dock/issues</Support>
+  <Project>https://github.com/LeonardoMacedoCano/claude-code-dock</Project>
+  <Overview>Run Claude Code (@anthropic-ai/claude-code) persistently on a 24/7 server. Boots inside a tmux session so it survives disconnects and restarts, and reconnects via the Console tab (Shell field: claude-console) or SSH. Credentials, workspace, and settings persist in bind-mounted paths across container restarts and updates. Each container is one isolated session — add the container again under a different name to run a second project with its own workspace and REMOTE_SESSION_NAME, sharing the same Claude login by pointing both at the same Claude Config parent path.&#13;&#10;&#13;&#10;Requires a one-time interactive login on first start: open the Console (or attach via SSH) and follow Claude Code's own authentication prompt. No credentials are ever handled by this template.</Overview>
+  <Category>Tools: Productivity: Utilities:</Category>
+  <WebUI/>
+  <TemplateURL/>
+  <Icon></Icon>
+  <ExtraParams>--interactive --tty</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <Config Name="Workspace" Target="/workspace" Default="" Mode="rw" Description="Your project files. Prefer cache/SSD over the array for I/O-heavy work." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/projects/</Config>
+
+  <Config Name="Claude Config" Target="/home/node/.claude" Default="" Mode="rw" Description="This session's Claude Code credentials/settings (equivalent to CONFIG_BASE_PATH/REMOTE_SESSION_NAME in the Docker Compose setup). Use a distinct subfolder per container -- never point two containers at the same path." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/claude-code-dock/configs/default/</Config>
+
+  <Config Name="Shared Config (optional)" Target="/home/node/.claude-shared" Default="" Mode="ro" Description="Optional: a folder with a shared CLAUDE.md and commands/ applied to every session. Leave the host path empty/unused if you don't need this." Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/claude-code-dock/shared/</Config>
+
+  <Config Name="AUTO_START_MODE" Target="AUTO_START_MODE" Default="interactive" Mode="" Description="interactive (Claude in a terminal, default), remote (Claude Remote Control as the main process), or shell (debugging)." Type="Variable" Display="always" Required="false" Mask="false">interactive</Config>
+
+  <Config Name="CLAUDE_AUTO_APPROVE" Target="CLAUDE_AUTO_APPROVE" Default="true" Mode="" Description="true enables --dangerously-skip-permissions (no per-action confirmation). false asks for approval before each action." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+
+  <Config Name="REMOTE_SESSION_NAME" Target="REMOTE_SESSION_NAME" Default="" Mode="" Description="Required. Unique name for this session -- shown in startup logs and used as the tmux/remote-control session identifier. Two containers must never share this value." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+
+  <Config Name="TZ" Target="TZ" Default="UTC" Mode="" Description="Container timezone, e.g. America/New_York." Type="Variable" Display="always" Required="false" Mask="false">UTC</Config>
+
+  <Config Name="CLAUDE_EXTRA_ARGS" Target="CLAUDE_EXTRA_ARGS" Default="" Mode="" Description="Extra arguments appended to the claude command, e.g. --model sonnet. Space-separated only -- no quoted args with internal spaces." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="GIT_USER_NAME" Target="GIT_USER_NAME" Default="" Mode="" Description="Git commit author name (optional)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="GIT_USER_EMAIL" Target="GIT_USER_EMAIL" Default="" Mode="" Description="Git commit author email (optional)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="GITHUB_TOKEN" Target="GITHUB_TOKEN" Default="" Mode="" Description="GitHub Personal Access Token (scope: repo) for git push/pull authentication (optional). Leave empty for public-repo read-only or SSH-based workflows." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <Config Name="GIT_REPO_URL" Target="GIT_REPO_URL" Default="" Mode="" Description="HTTPS URL of a repo to auto-clone into /workspace on first start, only if the workspace is empty (optional)." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>

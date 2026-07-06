@@ -91,6 +91,23 @@ if [ "${CONTAINER_STATUS}" = "running" ]; then
     CLAUDE_VERSION=$(docker exec "${CONTAINER_NAME}" cat /etc/claude-code-version 2>/dev/null || echo "unavailable")
     row "Version:" "${CLAUDE_VERSION}"
 
+    if [ "${CLAUDE_VERSION}" != "unavailable" ] && command -v curl &>/dev/null; then
+        # `|| true`: under `set -e`, a curl failure or a grep miss (both exit
+        # non-zero) would otherwise abort this whole script instead of just
+        # falling through to the "unavailable" branch below.
+        LATEST_VERSION=$(curl -fsS --max-time 5 https://registry.npmjs.org/@anthropic-ai/claude-code/latest 2>/dev/null \
+            | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"' || true)
+        if [ -n "${LATEST_VERSION}" ]; then
+            if [ "${CLAUDE_VERSION}" = "${LATEST_VERSION}" ]; then
+                row "Up to date:" "yes (latest: ${LATEST_VERSION})" "${GREEN}"
+            else
+                row "Update available:" "${LATEST_VERSION} (run ./scripts/update.sh)" "${YELLOW}"
+            fi
+        else
+            row "Latest version:" "unavailable (npm registry unreachable)"
+        fi
+    fi
+
     MODE_ENV=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null \
         | grep "^AUTO_START_MODE=" | cut -d= -f2 || echo "unknown")
     row "Mode:" "${MODE_ENV:-interactive}"

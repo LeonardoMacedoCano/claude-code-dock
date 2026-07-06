@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  schedule:
+    # Rebuilds `latest` weekly even with no repo changes, so the published
+    # image picks up new @anthropic-ai/claude-code releases (CACHEBUST below
+    # forces a fresh npm install rather than reusing the GHA layer cache).
+    - cron: "0 6 * * 1"
   workflow_dispatch:
 
 env:
@@ -59,6 +64,7 @@ jobs:
             type=ref,event=branch,enable=${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -66,5 +72,16 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            CACHEBUST=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Scan pushed image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

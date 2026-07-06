@@ -114,15 +114,28 @@ stop_container() {
 }
 
 rebuild_image() {
-    step "Rebuilding Docker image..."
-    echo ""
-    echo -e "  ${YELLOW}Using --no-cache to ensure the latest Claude Code version...${RESET}"
-    echo ""
-
     cd "${PROJECT_DIR}"
-    ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
 
-    ok "Image rebuilt successfully."
+    if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
+        step "Rebuilding Docker image from local source (CLAUDE_SOURCE_PATH set)..."
+        echo ""
+        echo -e "  ${YELLOW}Using --no-cache to ensure the latest Claude Code version...${RESET}"
+        echo ""
+        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
+        ok "Image rebuilt successfully."
+        return
+    fi
+
+    step "Pulling latest prebuilt Docker image..."
+    echo ""
+    if ${COMPOSE_CMD} -f "${COMPOSE_FILE}" pull; then
+        ok "Image pulled successfully."
+    else
+        warn "Pull failed — rebuilding from GitHub source instead (--no-cache)..."
+        echo ""
+        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
+        ok "Image rebuilt successfully."
+    fi
 }
 
 wait_for_container() {

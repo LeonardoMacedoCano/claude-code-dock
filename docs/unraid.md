@@ -108,8 +108,9 @@ nano .env
 Typical configuration for Unraid:
 
 ```env
-# Leave CLAUDE_SOURCE_PATH unset — the image builds directly from GitHub.
-# Pin a version once tags are available: CLAUDE_DOCK_VERSION=v1.0.0
+# Leave CLAUDE_SOURCE_PATH unset — `docker compose pull` fetches the prebuilt
+# image from GHCR directly. Pin a version with CLAUDE_DOCK_IMAGE once tagged
+# releases are available, e.g. CLAUDE_DOCK_IMAGE=ghcr.io/leonardomacedocano/claude-code-dock:v1.0.0
 CLAUDE_DOCK_VERSION=main
 
 # Workspace on SSD cache (faster than the HDD array)
@@ -192,9 +193,12 @@ docker compose up -d
 
 ## Method 2 — Unraid Docker UI
 
-### 2.1 — Build the image manually
+### 2.1 — Pull the prebuilt image
 
-Via SSH, build the image directly from GitHub — no local clone needed:
+No SSH or manual build needed — the **Repository** field in step 2.2 below
+(`ghcr.io/leonardomacedocano/claude-code-dock:latest`) is enough for Unraid to
+pull the image itself when you click **Apply**. Only build manually via SSH if
+you need an unreleased change to claude-code-dock itself:
 
 ```bash
 ssh root@your-unraid-server
@@ -211,7 +215,7 @@ In the Unraid panel:
 | Field | Value |
 |-------|-------|
 | Name | `claude-code-dock` |
-| Repository | `claude-code-dock:latest` |
+| Repository | `ghcr.io/leonardomacedocano/claude-code-dock:latest` |
 | Network Type | `bridge` |
 | Console shell command | `claude-console` |
 
@@ -441,9 +445,12 @@ docker compose up -d
 
 ### Docker UI shows the container as "unhealthy"
 
-claude-code-dock does not implement an HTTP health check because it is an interactive terminal process. The status in the Unraid UI may show as "unhealthy" — this is expected and does not indicate a real problem.
-
-To check the actual status:
+claude-code-dock's `HEALTHCHECK` isn't an HTTP check (there's no server to
+probe) — it verifies the tmux `main` session exists and its pane isn't dead
+(interactive/remote), or that PID 1 is bash (shell mode). A genuine
+"unhealthy" status means the Claude Code process crashed or exited inside the
+session, not a false positive. Check what's actually happening before
+assuming it's cosmetic:
 
 ```bash
 docker ps --filter name=claude-code-dock
@@ -464,6 +471,16 @@ Set the `projects` share to **Use Cache: Yes** in the Unraid panel to automatica
 
 ---
 
-## Community Applications Template (Future)
+## Community Applications Template
 
-An XML template for Community Applications is planned for future versions of claude-code-dock, allowing one-click installation via CA on Unraid. Until then, use Method 1 (Docker Compose) or Method 2 (Docker UI).
+A CA-compatible XML template ships at [`unraid/claude-code-dock.xml`](../unraid/claude-code-dock.xml). It hasn't been submitted to the official CA feed yet (that requires a hosted icon and a review PR against Unraid's Community Applications repo), but you can use it today without waiting for that:
+
+1. Go to **Docker** -> **Add Container**
+2. At the bottom, switch **Template** to **"Load a template from a URL or local path"**
+3. Point it at the raw file, e.g.:
+   `https://raw.githubusercontent.com/LeonardoMacedoCano/claude-code-dock/main/unraid/claude-code-dock.xml`
+4. Review the fields it pre-fills (workspace path, config path, `REMOTE_SESSION_NAME`, etc. — same variables as [Method 2](#22--add-container-via-ui) above) and click **Apply**
+
+For a second session, repeat with a different container **Name**, a different **Claude Config** host path, and a different `REMOTE_SESSION_NAME` — same isolation pattern as the Compose-based [Multiple Instances](docker.md#multiple-instances) setup via `new-session.sh`/`session-up.sh`.
+
+Until this is in the official CA feed, Method 1 (Docker Compose) or Method 2 (manual Docker UI) remain the more discoverable options for most users.
