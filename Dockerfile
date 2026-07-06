@@ -12,7 +12,20 @@ ENV LC_ALL=C.UTF-8
 ENV TERM=xterm-256color
 ENV PATH="/usr/local/bin:${PATH}"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# CACHEBUST is unused by the commands below but referenced in their RUN lines
+# so changing it invalidates Docker's layer cache for those instructions.
+# Needed because CI (docker-publish.yml) builds with a persistent GitHub
+# Actions cache — without this, apt/npm package resolution would happen once
+# and then get served from cache indefinitely, never picking up newer Debian
+# security fixes or Claude Code releases on the weekly scheduled rebuild.
+ARG CACHEBUST=1
+
+# upgrade: pulls Debian security-repo fixes for packages already present in
+# the base node:lts-bookworm image (not just the ones we explicitly install
+# below) -- without it, CVEs patched upstream but not yet in this base image
+# layer keep failing the Trivy scan step in CI on every rebuild.
+RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
+    apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     bash \
     curl \
     wget \
@@ -27,12 +40,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 ARG CLAUDE_CODE_VERSION=latest
-# CACHEBUST is unused by npm but referenced in the RUN line below so changing
-# it invalidates Docker's layer cache for this instruction. Needed because CI
-# (docker-publish.yml) builds with a persistent GitHub Actions cache — without
-# this, @${CLAUDE_CODE_VERSION}=latest would resolve once and then get served
-# from cache indefinitely, never picking up newer Claude Code releases.
-ARG CACHEBUST=1
 RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
     npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} --no-update-notifier && \
     grep '"version"' /usr/local/lib/node_modules/@anthropic-ai/claude-code/package.json \
