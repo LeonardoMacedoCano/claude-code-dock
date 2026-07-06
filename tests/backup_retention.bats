@@ -69,10 +69,33 @@ _create_old_backups() {
   [ "$ARCHIVES" -eq 0 ]
 }
 
-@test "quiet flag suppresses all output" {
+@test "quiet flag suppresses all output but still creates the backup" {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+  COUNT="$(ls "$TMP_PROJECT/backups"/claude-code-dock-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$COUNT" -eq 1 ]
+}
+
+@test "backup archive is a valid tar.gz containing config data" {
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+
+  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-backup-*.tar.gz 2>/dev/null | head -1)"
+  [ -n "$ARCHIVE" ]
+  tar -tzf "$ARCHIVE" | grep -q "config/settings.json"
+}
+
+@test "excludes GITHUB_TOKEN and CLAUDE_API_KEY from .env backup" {
+  printf 'GITHUB_TOKEN=ghp_secret\nCLAUDE_API_KEY=sk-secret\nTZ=UTC\n' > "$TMP_PROJECT/.env"
+
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+
+  ENV_BACKUP="$(ls "$TMP_PROJECT/backups/"*.env.backup 2>/dev/null | head -1)"
+  [ -n "$ENV_BACKUP" ]
+  run grep -E "^(GITHUB_TOKEN|CLAUDE_API_KEY)=" "$ENV_BACKUP"
+  [ "$status" -ne 0 ]
 }
 
 @test "respects BACKUP_RETENTION env var when set to a custom value" {
