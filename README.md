@@ -69,6 +69,7 @@ cp /srv/claude-code-dock/docker-compose.yml /srv/projects/homepage/docker-compos
 ### 3. Configure `.env`
 
 ```env
+CONTAINER_NAME=claude-code-dock-homepage
 CLAUDE_SOURCE_PATH=/srv/claude-code-dock
 CONFIG_PATH=/srv/claude-config
 WORKSPACE_PATH=/srv/www/homepage
@@ -81,11 +82,6 @@ GIT_USER_NAME=Your Name
 GIT_USER_EMAIL=you@email.com
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 GIT_REPO_URL=https://github.com/your-user/your-repo.git
-```
-
-Edit `docker-compose.yml` and set a unique `container_name`:
-```yaml
-container_name: claude-code-dock-homepage
 ```
 
 ### 4. Build and start
@@ -104,7 +100,7 @@ docker exec -it claude-code-dock-homepage tmux attach-session -t main
 
 Complete the authentication flow. Credentials are saved to `/srv/claude-config/`. Disconnect with `Ctrl+B, D` — the container keeps running.
 
-For every additional container: copy, set a new `WORKSPACE_PATH`, `REMOTE_SESSION_NAME`, and `container_name` — same `CONFIG_PATH`, no login required.
+For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PATH`, and `REMOTE_SESSION_NAME` — same `CONFIG_PATH`, no login required.
 
 ---
 
@@ -112,6 +108,7 @@ For every additional container: copy, set a new `WORKSPACE_PATH`, `REMOTE_SESSIO
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `CONTAINER_NAME` | `claude-code-dock` | Docker container name — must be unique per container on the same host |
 | `CLAUDE_SOURCE_PATH` | `.` | Path to the claude-code-dock clone on the host |
 | `CONFIG_PATH` | `./config` | Credentials folder — share this across all containers |
 | `WORKSPACE_PATH` | `./workspaces` | This container's project folder |

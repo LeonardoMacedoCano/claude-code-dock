@@ -1,6 +1,6 @@
 services:
   claude-code-dock:
-    container_name: claude-code-dock
+    container_name: ${CONTAINER_NAME:-claude-code-dock}
     build:
       context: ${CLAUDE_SOURCE_PATH:-.}
     environment:
