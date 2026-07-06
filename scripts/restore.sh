@@ -15,6 +15,20 @@ if [ -f "${ENV_FILE}" ]; then
 fi
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 
+CONFIG_BASE_PATH="${CONFIG_BASE_PATH:-}"
+REMOTE_SESSION_NAME="${REMOTE_SESSION_NAME:-}"
+
+if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
+    if [[ "${CONFIG_BASE_PATH}" == ./* ]]; then
+        CONFIG_BASE_PATH="${PROJECT_DIR}/${CONFIG_BASE_PATH#./}"
+    fi
+    CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
+    BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
+else
+    CONFIG_DIR="${PROJECT_DIR}/configs/default"
+    BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -25,7 +39,7 @@ RESET='\033[0m'
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             claude-code-dock — Restore                    ║${RESET}"
+    echo -e "${CYAN}${BOLD}║             claude-code-dock — Restore               ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }
@@ -50,6 +64,9 @@ fail() {
 list_backups() {
     echo ""
     echo -e "${CYAN}${BOLD}Available backups in ${DEFAULT_BACKUP_DIR}:${RESET}"
+    if [ -n "${REMOTE_SESSION_NAME}" ]; then
+        echo -e "${CYAN}${BOLD}Session: ${REMOTE_SESSION_NAME}${RESET}"
+    fi
     echo ""
 
     if [ ! -d "${DEFAULT_BACKUP_DIR}" ]; then
@@ -58,7 +75,7 @@ list_backups() {
         exit 0
     fi
 
-    BACKUPS=$(ls -1t "${DEFAULT_BACKUP_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null || echo "")
+    BACKUPS=$(ls -1t "${DEFAULT_BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null || echo "")
 
     if [ -z "${BACKUPS}" ]; then
         echo -e "  ${YELLOW}No backups found.${RESET}"
@@ -94,7 +111,7 @@ case "${1:-}" in
         exit 0
         ;;
     "")
-        LATEST=$(ls -1t "${DEFAULT_BACKUP_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | head -1 || echo "")
+        LATEST=$(ls -1t "${DEFAULT_BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | head -1 || echo "")
         if [ -z "${LATEST}" ]; then
             echo ""
             echo -e "${RED}[✗]${RESET} No backup found and no file specified."
@@ -183,15 +200,23 @@ fi
 
 step "Creating safety backup of current data..."
 
-SAFETY_BACKUP="${PROJECT_DIR}/backups/pre-restore-safety-$(date +"%Y-%m-%d_%H-%M-%S").tar.gz"
+SAFETY_TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+if [ -n "${REMOTE_SESSION_NAME}" ]; then
+    SAFETY_BACKUP="${PROJECT_DIR}/backups/claude-code-dock-${REMOTE_SESSION_NAME}-pre-restore-${SAFETY_TIMESTAMP}.tar.gz"
+else
+    SAFETY_BACKUP="${PROJECT_DIR}/backups/pre-restore-safety-${SAFETY_TIMESTAMP}.tar.gz"
+fi
 mkdir -p "${PROJECT_DIR}/backups"
 
 SAFETY_ITEMS=()
-[ -d "${PROJECT_DIR}/config" ] && [ -n "$(ls -A "${PROJECT_DIR}/config" 2>/dev/null)" ] && SAFETY_ITEMS+=("config")
-[ -d "${PROJECT_DIR}/workspaces" ] && [ -n "$(ls -A "${PROJECT_DIR}/workspaces" 2>/dev/null)" ] && SAFETY_ITEMS+=("workspaces")
+if [ -d "${CONFIG_DIR}" ] && [ -n "$(ls -A "${CONFIG_DIR}" 2>/dev/null)" ]; then
+    SAFETY_ITEMS+=("-C" "$(dirname "${CONFIG_DIR}")" "$(basename "${CONFIG_DIR}")")
+fi
+if [ -d "${PROJECT_DIR}/workspaces" ] && [ -n "$(ls -A "${PROJECT_DIR}/workspaces" 2>/dev/null)" ]; then
+    SAFETY_ITEMS+=("-C" "${PROJECT_DIR}" "workspaces")
+fi
 
 if [ ${#SAFETY_ITEMS[@]} -gt 0 ]; then
-    cd "${PROJECT_DIR}"
     tar -czf "${SAFETY_BACKUP}" "${SAFETY_ITEMS[@]}" 2>/dev/null && \
         ok "Safety backup created: ${BOLD}$(basename "${SAFETY_BACKUP}")${RESET}" || \
         warn "Could not create safety backup. Continuing anyway."
@@ -201,8 +226,13 @@ fi
 
 step "Restoring backup..."
 
-cd "${PROJECT_DIR}"
-tar -xzf "${BACKUP_FILE}" -C "${PROJECT_DIR}"
+RESTORE_TARGET="${PROJECT_DIR}"
+if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
+    mkdir -p "${CONFIG_BASE_PATH}"
+    RESTORE_TARGET="${CONFIG_BASE_PATH}"
+fi
+
+tar -xzf "${BACKUP_FILE}" -C "${RESTORE_TARGET}"
 
 ok "Data restored successfully."
 

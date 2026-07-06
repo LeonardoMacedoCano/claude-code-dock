@@ -20,7 +20,8 @@ services:
       - LC_ALL=C.UTF-8
     volumes:
       - ${WORKSPACE_PATH:-./workspaces}:/workspace
-      - ${CONFIG_PATH:-./config}:/home/node/.claude
+      - ${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}:/home/node/.claude
+      - ${SHARED_CONFIG_PATH:-./shared-config}:/home/node/.claude-shared:ro
     stdin_open: true
     tty: true
     restart: unless-stopped

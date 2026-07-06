@@ -38,6 +38,7 @@ BATS_FILES=(
   "$SCRIPT_DIR/entrypoint_modes.bats"
   "$SCRIPT_DIR/entrypoint_symlink.bats"
   "$SCRIPT_DIR/entrypoint_settings.bats"
+  "$SCRIPT_DIR/entrypoint_shared_config.bats"
   "$SCRIPT_DIR/backup_retention.bats"
 )
 

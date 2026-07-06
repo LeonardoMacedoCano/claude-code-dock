@@ -158,13 +158,19 @@ The `node:lts-bookworm` base image already includes the `node` user (UID/GID 100
 ```yaml
 volumes:
   - ${WORKSPACE_PATH:-./workspaces}:/workspace
-  - ${CONFIG_PATH:-./config}:/home/node/.claude
+  - ${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}:/home/node/.claude
+  - ${SHARED_CONFIG_PATH:-./shared-config}:/home/node/.claude-shared:ro
 ```
 
-**Config volume (`CONFIG_PATH → /home/node/.claude`):**
-- Claude Code stores credentials, settings, and cache in `~/.claude/` (resolves to `/home/node/.claude/` with USER node)
-- Mounting as a volume ensures persistence across restarts
+**Config volume (`CONFIG_BASE_PATH/REMOTE_SESSION_NAME → /home/node/.claude`):**
+- Each session gets its own isolated subdirectory under `CONFIG_BASE_PATH`
+- Claude Code stores credentials, settings, and cache in `~/.claude/`
 - Without this volume, a new login would be required on every restart
+
+**Shared config volume (`SHARED_CONFIG_PATH → /home/node/.claude-shared`, read-only):**
+- Optional. Place `CLAUDE.md` and `commands/` here to share across all sessions
+- The entrypoint merges `CLAUDE.md` and symlinks `commands/*.md` at startup
+- Instance-specific instructions go in `CONFIG_BASE_PATH/<session>/CLAUDE-local.md`
 
 **Workspace volume (`WORKSPACE_PATH → /workspace`):**
 - Working directory where the user keeps their projects
@@ -180,11 +186,13 @@ volumes:
 | `CLAUDE_AUTO_APPROVE` | `true` | Enables `--dangerously-skip-permissions` (interactive mode) |
 | `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command |
 | `WORKSPACE_PATH` | `./workspaces` | Path to projects on the host |
-| `CONFIG_PATH` | `./config` | Path to credentials on the host |
+| `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories |
+| `REMOTE_SESSION_NAME` | `` | **Required.** Unique session ID — isolates config, names backups, prevents duplicate containers |
+| `SHARED_CONFIG_PATH` | `` | Optional shared dir with global `CLAUDE.md` and `commands/` applied to all sessions |
 | `TZ` | `UTC` | Timezone |
 | `GIT_USER_NAME` | `` | Name for git commits |
 | `GIT_USER_EMAIL` | `` | Email for git commits |
-| `BACKUP_RETENTION` | `10` | Number of backups to keep; oldest are removed automatically |
+| `BACKUP_RETENTION` | `10` | Number of backups to keep per session; oldest are removed automatically |
 
 ### Mode resolution
 

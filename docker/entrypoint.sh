@@ -45,7 +45,9 @@ log_step "Startup configuration:"
 log_info "Execution mode:    ${BOLD}${AUTO_START_MODE:-interactive}${RESET}"
 log_info "Auto-approve:      ${BOLD}${CLAUDE_AUTO_APPROVE:-true}${RESET}"
 if [ -n "${REMOTE_SESSION_NAME:-}" ]; then
-    log_info "Session name:      ${BOLD}${REMOTE_SESSION_NAME}${RESET}"
+    log_info "Session ID:        ${BOLD}${REMOTE_SESSION_NAME}${RESET}"
+else
+    log_warn "REMOTE_SESSION_NAME is not set. Set it in .env to isolate this session."
 fi
 if [ -n "${CLAUDE_EXTRA_ARGS:-}" ]; then
     log_info "Extra arguments:   ${BOLD}${CLAUDE_EXTRA_ARGS}${RESET}"
@@ -142,6 +144,44 @@ if [ "${CLAUDE_AUTO_APPROVE:-true}" = "true" ]; then
     else
         echo '{"skipDangerousModePermissionPrompt":true}' > "${SETTINGS_FILE}"
         log_info "settings.json created with skipDangerousModePermissionPrompt=true"
+    fi
+fi
+
+SHARED_DIR="${HOME}/.claude-shared"
+
+if [ -f "${SHARED_DIR}/CLAUDE.md" ]; then
+    log_step "Applying shared configuration..."
+
+    LOCAL_MD="${HOME}/.claude/CLAUDE-local.md"
+    GENERATED_MD="${HOME}/.claude/CLAUDE.md"
+
+    if [ ! -f "${LOCAL_MD}" ] && [ -f "${GENERATED_MD}" ]; then
+        if ! grep -q "^# SHARED CONFIG" "${GENERATED_MD}" 2>/dev/null; then
+            mv "${GENERATED_MD}" "${LOCAL_MD}"
+            log_info "Existing CLAUDE.md preserved as CLAUDE-local.md"
+        fi
+    fi
+
+    {
+        printf "# SHARED CONFIG — auto-generated at startup, do not edit\n\n"
+        cat "${SHARED_DIR}/CLAUDE.md"
+        if [ -f "${LOCAL_MD}" ]; then
+            printf "\n---\n\n"
+            cat "${LOCAL_MD}"
+        fi
+    } > "${GENERATED_MD}"
+
+    log_info "Shared CLAUDE.md applied"
+fi
+
+if [ -d "${SHARED_DIR}/commands" ]; then
+    SHARED_CMDS=$(find "${SHARED_DIR}/commands" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l)
+    if [ "${SHARED_CMDS}" -gt 0 ]; then
+        mkdir -p "${HOME}/.claude/commands"
+        for f in "${SHARED_DIR}/commands/"*.md; do
+            [ -f "$f" ] && ln -sf "$f" "${HOME}/.claude/commands/$(basename "$f")"
+        done
+        log_info "Shared commands: ${BOLD}${SHARED_CMDS} skill(s) linked${RESET}"
     fi
 fi
 

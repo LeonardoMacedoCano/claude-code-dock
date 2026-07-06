@@ -20,6 +20,19 @@ if [ -f "${ENV_FILE}" ]; then
     set +a
 fi
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
+REMOTE_SESSION_NAME="${REMOTE_SESSION_NAME:-}"
+CONFIG_BASE_PATH="${CONFIG_BASE_PATH:-}"
+
+if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
+    if [[ "${CONFIG_BASE_PATH}" == ./* ]]; then
+        CONFIG_BASE_PATH="${PROJECT_DIR}/${CONFIG_BASE_PATH#./}"
+    fi
+    CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
+    BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
+else
+    CONFIG_DIR="${PROJECT_DIR}/configs/default"
+    BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
+fi
 
 header() {
     echo ""
@@ -52,6 +65,9 @@ case "${CONTAINER_STATUS}" in
 esac
 
 row "Container name:" "${CONTAINER_NAME}"
+if [ -n "${REMOTE_SESSION_NAME}" ]; then
+    row "Session ID:" "${REMOTE_SESSION_NAME}"
+fi
 row "Status:" "${CONTAINER_STATUS}" "${STATUS_COLOR}"
 
 if [ -n "${CONTAINER_HEALTH}" ] && [ "${CONTAINER_HEALTH}" != "no healthcheck" ]; then
@@ -107,14 +123,13 @@ echo ""
 
 # --- Credentials ---
 echo -e "  ${CYAN}Credentials${RESET}"
-CONFIG_PATH="${CONFIG_PATH:-${PROJECT_DIR}/config}"
-CLAUDE_JSON="${CONFIG_PATH}/.claude.json"
+CLAUDE_JSON="${CONFIG_DIR}/.claude.json"
 if [ -f "${CLAUDE_JSON}" ]; then
     row "Login:" "authenticated" "${GREEN}"
-    row "Config path:" "${CONFIG_PATH}"
+    row "Config path:" "${CONFIG_DIR}"
 else
     row "Login:" "not authenticated (first login required)" "${YELLOW}"
-    row "Config path:" "${CONFIG_PATH}"
+    row "Config path:" "${CONFIG_DIR}"
 fi
 
 echo ""
@@ -123,8 +138,8 @@ echo ""
 echo -e "  ${CYAN}Backups${RESET}"
 BACKUP_DIR="${PROJECT_DIR}/backups"
 if [ -d "${BACKUP_DIR}" ]; then
-    BACKUP_COUNT=$(ls -1 "${BACKUP_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | wc -l)
-    LATEST_BACKUP=$(ls -1t "${BACKUP_DIR}"/claude-code-dock-backup-*.tar.gz 2>/dev/null | head -1 || echo "")
+    BACKUP_COUNT=$(ls -1 "${BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | wc -l)
+    LATEST_BACKUP=$(ls -1t "${BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | head -1 || echo "")
     row "Total backups:" "${BACKUP_COUNT}"
     if [ -n "${LATEST_BACKUP}" ]; then
         row "Latest:" "$(basename "${LATEST_BACKUP}")"

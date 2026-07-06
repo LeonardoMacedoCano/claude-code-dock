@@ -93,7 +93,8 @@ check_env() {
             echo ""
             echo -e "  Example (Unraid):"
             echo -e "  ${BOLD}WORKSPACE_PATH=/mnt/user/projects${RESET}"
-            echo -e "  ${BOLD}CONFIG_PATH=/mnt/user/appdata/claude-code-dock/config${RESET}"
+            echo -e "  ${BOLD}CONFIG_BASE_PATH=/mnt/user/appdata/claude-code-dock/configs${RESET}"
+            echo -e "  ${BOLD}REMOTE_SESSION_NAME=my-session${RESET}"
             echo ""
             read -r -p "  Press Enter after editing .env to continue (or Ctrl+C to cancel)..."
         else
@@ -105,9 +106,21 @@ check_env() {
     # shellcheck disable=SC1090
     source "${ENV_FILE}"
     set +a
-    CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 
     ok ".env file loaded."
+
+    if [ -z "${REMOTE_SESSION_NAME:-}" ]; then
+        fail "REMOTE_SESSION_NAME not set in .env. Set a unique name for this session (e.g. REMOTE_SESSION_NAME=my-project)."
+    fi
+    ok "REMOTE_SESSION_NAME: ${REMOTE_SESSION_NAME}"
+
+    if [ -z "${CONTAINER_NAME:-}" ]; then
+        CONTAINER_NAME="claude-code-dock-${REMOTE_SESSION_NAME}"
+        echo "CONTAINER_NAME=${CONTAINER_NAME}" >> "${ENV_FILE}"
+        ok "CONTAINER_NAME auto-set: ${CONTAINER_NAME} (written to .env)"
+    fi
+    CONTAINER_NAME="${CONTAINER_NAME}"
+    ok "CONTAINER_NAME: ${CONTAINER_NAME}"
 
     if [ -z "${WORKSPACE_PATH:-}" ]; then
         fail "WORKSPACE_PATH not set in .env. Configure it before continuing."
@@ -130,9 +143,18 @@ check_env() {
         fi
     fi
 
-    if [ -n "${CONFIG_PATH:-}" ]; then
-        mkdir -p "${CONFIG_PATH}"
-        ok "CONFIG_PATH: ${CONFIG_PATH}"
+    if [ -z "${CONFIG_BASE_PATH:-}" ]; then
+        fail "CONFIG_BASE_PATH not set in .env. Configure it before continuing."
+    fi
+
+    CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
+    mkdir -p "${CONFIG_DIR}"
+    ok "Session config dir: ${CONFIG_DIR}"
+
+    if [ -n "${SHARED_CONFIG_PATH:-}" ]; then
+        mkdir -p "${SHARED_CONFIG_PATH}"
+        mkdir -p "${SHARED_CONFIG_PATH}/commands"
+        ok "SHARED_CONFIG_PATH: ${SHARED_CONFIG_PATH}"
     fi
 
     if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
@@ -144,10 +166,6 @@ check_env() {
 
 setup_directories() {
     step "Creating project directory structure..."
-
-    mkdir -p "${PROJECT_DIR}/config"
-    touch "${PROJECT_DIR}/config/.gitkeep"
-    ok "Directory config/ created"
 
     mkdir -p "${PROJECT_DIR}/workspaces"
     touch "${PROJECT_DIR}/workspaces/.gitkeep"
