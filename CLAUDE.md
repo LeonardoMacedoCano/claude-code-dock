@@ -185,6 +185,8 @@ volumes:
 | `AUTO_START_MODE` | `interactive` | Execution mode: `interactive`, `remote`, `shell` |
 | `CLAUDE_AUTO_APPROVE` | `true` | Enables `--dangerously-skip-permissions` (interactive mode) |
 | `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command |
+| `CLAUDE_DOCK_VERSION` | `main` | Branch/tag of claude-code-dock to build the image from GitHub (build context ref) |
+| `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to use as build context instead of GitHub (advanced/dev use) |
 | `WORKSPACE_PATH` | `./workspaces` | Path to projects on the host |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories |
 | `REMOTE_SESSION_NAME` | `` | **Required.** Unique session ID — isolates config, names backups, prevents duplicate containers |
@@ -663,7 +665,7 @@ What is NOT exposed:
 ### When submitting a PR
 
 1. Document the reason for the change
-2. Test on a clean Docker build (`docker compose build --no-cache`)
+2. Set `CLAUDE_SOURCE_PATH=.` in `.env` so the build uses your local working tree, not GitHub — then test on a clean Docker build (`docker compose build --no-cache`)
 3. Test all three modes: interactive, remote, shell
 4. Verify that credentials persist after `docker compose restart`
 5. Ensure scripts maintain `set -euo pipefail` and error handling

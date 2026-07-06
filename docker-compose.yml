@@ -2,7 +2,7 @@ services:
   claude-code-dock:
     container_name: ${CONTAINER_NAME:-claude-code-dock}
     build:
-      context: ${CLAUDE_SOURCE_PATH:-.}
+      context: ${CLAUDE_SOURCE_PATH:-https://github.com/LeonardoMacedoCano/claude-code-dock.git#${CLAUDE_DOCK_VERSION:-main}}
       args:
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     environment:

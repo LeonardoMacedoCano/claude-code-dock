@@ -107,8 +107,9 @@ nano .env
 Typical configuration for Unraid:
 
 ```env
-# Where the project lives (folder with the Dockerfile)
-CLAUDE_SOURCE_PATH=/mnt/user/appdata/claude-code-dock
+# Leave CLAUDE_SOURCE_PATH unset — the image builds directly from GitHub.
+# Pin a version once tags are available: CLAUDE_DOCK_VERSION=v1.0.0
+CLAUDE_DOCK_VERSION=main
 
 # Workspace on SSD cache (faster than the HDD array)
 WORKSPACE_PATH=/mnt/cache/projects
@@ -169,12 +170,11 @@ docker compose up -d
 
 ### 2.1 — Build the image manually
 
-First, via SSH, build the image:
+Via SSH, build the image directly from GitHub — no local clone needed:
 
 ```bash
 ssh root@your-unraid-server
-cd /mnt/user/appdata/claude-code-dock
-docker build -t claude-code-dock:latest .
+docker build -t claude-code-dock:latest https://github.com/LeonardoMacedoCano/claude-code-dock.git#main
 ```
 
 ### 2.2 — Add container via UI

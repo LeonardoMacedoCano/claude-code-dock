@@ -158,7 +158,9 @@ check_env() {
     fi
 
     if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
-        ok "CLAUDE_SOURCE_PATH: ${CLAUDE_SOURCE_PATH}"
+        ok "CLAUDE_SOURCE_PATH: ${CLAUDE_SOURCE_PATH} (building from local clone)"
+    else
+        ok "Building from GitHub: ${CLAUDE_DOCK_VERSION:-main}"
     fi
 
     ok "AUTO_START_MODE: ${AUTO_START_MODE:-interactive}"

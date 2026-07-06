@@ -49,29 +49,24 @@ One server can run any number of containers, each with its own project and sessi
 
 ## Setup
 
-### 1. Clone to your server (once)
+No local clone of this repository is required — `docker compose build` fetches the source directly from GitHub. You only need two files on your server: `docker-compose.yml` and `.env`.
+
+### 1. Create a project folder
 
 ```bash
-git clone https://github.com/LeonardoMacedoCano/claude-code-dock.git /srv/claude-code-dock
+mkdir -p /srv/projects/homepage
+curl -o /srv/projects/homepage/docker-compose.yml https://raw.githubusercontent.com/LeonardoMacedoCano/claude-code-dock/main/docker-compose.yml
+curl -o /srv/projects/homepage/.env https://raw.githubusercontent.com/LeonardoMacedoCano/claude-code-dock/main/.env.example
 mkdir -p /srv/claude-config
 ```
 
 `/srv/claude-config` is the shared credentials folder — **all containers point here, you log in only once.**
 
-### 2. Create a project folder
-
-```bash
-mkdir -p /srv/projects/homepage
-cp /srv/claude-code-dock/.env.example /srv/projects/homepage/.env
-cp /srv/claude-code-dock/docker-compose.yml /srv/projects/homepage/docker-compose.yml
-```
-
-### 3. Configure `.env`
+### 2. Configure `.env`
 
 ```env
 CONTAINER_NAME=claude-code-dock-homepage
-CLAUDE_SOURCE_PATH=/srv/claude-code-dock
-CONFIG_BASE_PATH=/srv/claude-code-dock/configs
+CONFIG_BASE_PATH=/srv/claude-config
 WORKSPACE_PATH=/srv/www/homepage
 AUTO_START_MODE=remote
 CLAUDE_AUTO_APPROVE=true
@@ -84,7 +79,9 @@ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ```
 
-### 4. Build and start
+Leave `CLAUDE_SOURCE_PATH` empty (default) so the image builds from GitHub — pin a version with `CLAUDE_DOCK_VERSION` if needed. Only set `CLAUDE_SOURCE_PATH` if you have a local clone of claude-code-dock you want to build from instead.
+
+### 3. Build and start
 
 ```bash
 cd /srv/projects/homepage
@@ -92,13 +89,15 @@ docker compose build
 docker compose up -d
 ```
 
-### 5. First login (only once, for the first container)
+> Prefer the convenience scripts (`install.sh`, `attach.sh`, `backup.sh`, ...)? Clone the repository instead — see [Scripts](#scripts) below. The scripts still work with `CLAUDE_SOURCE_PATH` unset, since the build itself no longer needs a local clone.
+
+### 4. First login (only once, for the first container)
 
 ```bash
 docker exec -it claude-code-dock-homepage tmux attach-session -t main
 ```
 
-Complete the authentication flow. Credentials are saved to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` (e.g. `/srv/claude-code-dock/configs/HomePage/`). Disconnect with `Ctrl+B, D` — the container keeps running.
+Complete the authentication flow. Credentials are saved to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` (e.g. `/srv/claude-config/HomePage/`). Disconnect with `Ctrl+B, D` — the container keeps running.
 
 For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PATH`, and `REMOTE_SESSION_NAME` — same `CONFIG_BASE_PATH`, no login required.
 
@@ -109,7 +108,8 @@ For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PAT
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CONTAINER_NAME` | `claude-code-dock` | Docker container name — must be unique per container on the same host |
-| `CLAUDE_SOURCE_PATH` | `.` | Path to the claude-code-dock clone on the host |
+| `CLAUDE_DOCK_VERSION` | `main` | Branch/tag of claude-code-dock to build from GitHub |
+| `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to build from instead of GitHub (advanced) |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories — share this across all containers |
 | `REMOTE_SESSION_NAME` | `` | Unique session ID — credentials stored at `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` |
 | `WORKSPACE_PATH` | `./workspaces` | This container's project folder |
