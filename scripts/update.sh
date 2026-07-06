@@ -117,21 +117,21 @@ rebuild_image() {
     cd "${PROJECT_DIR}"
 
     if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
-        step "Rebuilding Docker image from local source (CLAUDE_SOURCE_PATH set)..."
+        step "BUILD SOURCE: LOCAL folder (CLAUDE_SOURCE_PATH=${CLAUDE_SOURCE_PATH}) — GitHub and any cached image are ignored"
         echo ""
-        echo -e "  ${YELLOW}Using --no-cache to ensure the latest Claude Code version...${RESET}"
+        echo -e "  ${YELLOW}Using --no-cache: CLAUDE_SOURCE_PATH always wins, no dependency on a stale image or layer cache.${RESET}"
         echo ""
         ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
-        ok "Image rebuilt successfully."
+        ok "Image rebuilt successfully from local source."
         return
     fi
 
-    step "Pulling latest prebuilt Docker image..."
+    step "BUILD SOURCE: prebuilt GHCR image (${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest})"
     echo ""
     if ${COMPOSE_CMD} -f "${COMPOSE_FILE}" pull; then
         ok "Image pulled successfully."
     else
-        warn "Pull failed — rebuilding from GitHub source instead (--no-cache)..."
+        warn "Pull failed — BUILD SOURCE: GitHub (${CLAUDE_DOCK_VERSION:-main}), rebuilding with --no-cache..."
         echo ""
         ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
         ok "Image rebuilt successfully."

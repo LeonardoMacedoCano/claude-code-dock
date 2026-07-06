@@ -39,6 +39,18 @@ RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
         | head -1 | awk -F'"' '{print $4}' \
         > /etc/claude-code-version 2>/dev/null || echo "unknown" > /etc/claude-code-version
 
+# Records whether this image came from a local clone (CLAUDE_SOURCE_PATH, used
+# to test claude-code-dock changes before pushing) or a GitHub ref, so
+# entrypoint.sh and `scripts/status.sh` can show unambiguously which one is
+# actually running instead of leaving it to guesswork after the build scrolls by.
+ARG CLAUDE_DOCK_SOURCE_PATH=
+ARG CLAUDE_DOCK_VERSION=main
+RUN if [ -n "${CLAUDE_DOCK_SOURCE_PATH}" ]; then \
+        echo "local:${CLAUDE_DOCK_SOURCE_PATH}" > /etc/claude-dock-build-source; \
+    else \
+        echo "github:${CLAUDE_DOCK_VERSION}" > /etc/claude-dock-build-source; \
+    fi
+
 RUN mkdir -p /workspace && chown node:node /workspace
 
 WORKDIR /workspace

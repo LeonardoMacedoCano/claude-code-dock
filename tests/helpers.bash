@@ -15,6 +15,7 @@ setup_entrypoint_env() {
 
   export HOME="$MOCK_HOME"
   export WORKSPACE_DIR="$MOCK_WORKSPACE"
+  export BUILD_SOURCE_FILE="$TEST_TMPDIR/no-build-source-marker"
   export PATH="$MOCK_BIN:$PATH"
 
   export AUTO_START_MODE="interactive"

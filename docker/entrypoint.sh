@@ -161,6 +161,17 @@ fi
 if [ -n "${TZ:-}" ]; then
     log_info "Timezone:          ${BOLD}${TZ}${RESET}"
 fi
+BUILD_SOURCE_FILE="${BUILD_SOURCE_FILE:-/etc/claude-dock-build-source}"
+if [ -f "${BUILD_SOURCE_FILE}" ]; then
+    BUILD_SOURCE_RAW="$(cat "${BUILD_SOURCE_FILE}" 2>/dev/null || echo "")"
+    BUILD_SOURCE_KIND="${BUILD_SOURCE_RAW%%:*}"
+    BUILD_SOURCE_REF="${BUILD_SOURCE_RAW#*:}"
+    if [ "${BUILD_SOURCE_KIND}" = "local" ]; then
+        log_info "Build source:      ${BOLD}local clone (CLAUDE_SOURCE_PATH=${BUILD_SOURCE_REF})${RESET}"
+    else
+        log_info "Build source:      ${BOLD}GitHub (ref: ${BUILD_SOURCE_REF})${RESET}"
+    fi
+fi
 echo ""
 
 log_step "Checking Claude Code installation..."

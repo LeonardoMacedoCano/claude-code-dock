@@ -204,22 +204,24 @@ build_image() {
     cd "${PROJECT_DIR}"
 
     if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
-        step "Building Docker image from local source (CLAUDE_SOURCE_PATH set)..."
+        step "BUILD SOURCE: LOCAL folder (CLAUDE_SOURCE_PATH=${CLAUDE_SOURCE_PATH}) — GitHub and any cached image are ignored"
         echo ""
-        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build
-        ok "Image built successfully."
+        # --no-cache: CLAUDE_SOURCE_PATH must always win, with no dependency on
+        # a stale image already tagged locally or on Docker's layer cache.
+        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
+        ok "Image built successfully from local source."
         return
     fi
 
-    step "Pulling prebuilt Docker image..."
+    step "BUILD SOURCE: prebuilt GHCR image (${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest})"
     echo ""
     if ${COMPOSE_CMD} -f "${COMPOSE_FILE}" pull; then
         ok "Image pulled successfully."
     else
-        warn "Pull failed — building from GitHub source instead (this may take a few minutes)..."
+        warn "Pull failed — BUILD SOURCE: GitHub (${CLAUDE_DOCK_VERSION:-main}), this may take a few minutes..."
         echo ""
-        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build
-        ok "Image built successfully."
+        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
+        ok "Image built successfully from GitHub."
     fi
 }
 

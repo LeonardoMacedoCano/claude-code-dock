@@ -227,6 +227,43 @@ docker compose build
 docker compose build --no-cache
 ```
 
+### Local development
+
+Testing an unreleased change to claude-code-dock itself? Set `CLAUDE_SOURCE_PATH`
+in `.env` to your local clone (e.g. `CLAUDE_SOURCE_PATH=.`). This is the
+highest-priority source: when set, it always wins over `CLAUDE_DOCK_IMAGE`
+(prebuilt pull) and `CLAUDE_DOCK_VERSION` (GitHub ref) — both are ignored.
+
+`./scripts/install.sh` and `./scripts/update.sh` detect `CLAUDE_SOURCE_PATH`
+and automatically switch to `docker compose build --no-cache`, so your local
+folder is guaranteed to be what actually gets built — never a stale image
+already tagged locally, and never GitHub.
+
+If you run `docker compose` commands directly instead of the scripts, you
+must force that same guarantee yourself. `docker-compose.yml` declares both
+`image:` and `build:` on the service (needed so `docker compose pull` still
+works for everyone else) — which means Compose only builds when the image tag
+doesn't already exist locally. A bare `docker compose up -d` will silently
+reuse whatever is already tagged there (e.g. from an earlier `docker compose
+pull`) and ignore your `CLAUDE_SOURCE_PATH` changes entirely:
+
+```bash
+# Correct — forces a fresh build from CLAUDE_SOURCE_PATH every time:
+docker compose build --no-cache && docker compose up -d
+# or the equivalent one-liner:
+docker compose up -d --build
+
+# Wrong when testing local changes — reuses whatever image is already
+# tagged locally instead of rebuilding, if one exists:
+docker compose up -d
+```
+
+To confirm which source is actually running, check the container's startup
+log (`./scripts/logs.sh --app`, look for the `Build source:` line) or run
+`./scripts/status.sh` — both report `local clone (CLAUDE_SOURCE_PATH=...)` or
+`GitHub (ref: ...)` baked into the image at build time, so there's no
+ambiguity after the fact.
+
 ### Update Claude Code
 
 To update to the latest version of Claude Code:
@@ -254,6 +291,9 @@ fresh npm install in that local build too.
 ```bash
 # Claude Code version in the image
 docker exec claude-code-dock claude --version
+
+# Which source claude-code-dock itself was built from (local clone or GitHub ref)
+docker exec claude-code-dock cat /etc/claude-dock-build-source
 
 # Globally installed npm packages
 docker exec claude-code-dock npm list -g --depth=0

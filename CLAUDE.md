@@ -187,7 +187,7 @@ volumes:
 | `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command |
 | `CLAUDE_DOCK_IMAGE` | `ghcr.io/leonardomacedocano/claude-code-dock:latest` | Prebuilt image `docker compose pull` fetches by default |
 | `CLAUDE_DOCK_VERSION` | `main` | Branch/tag to build from when not pulling the prebuilt image (build context ref) |
-| `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to use as build context instead of pulling/GitHub (advanced/dev use) |
+| `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to use as build context instead of pulling/GitHub (advanced/dev use). Highest priority when set — always wins, `install.sh`/`update.sh` force `--no-cache` |
 | `WORKSPACE_PATH` | `./workspaces` | Path to projects on the host |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories |
 | `REMOTE_SESSION_NAME` | `` | **Required.** Unique session ID — isolates config, names backups, prevents duplicate containers |
@@ -285,6 +285,7 @@ tmux new-session -s main claude --dangerously-skip-permissions
 - `ENV HOME=/home/node`: ensures the node user's home is used correctly.
 - `VOLUME ["/home/node/.claude"]`: documents that this directory must be persisted.
 - `ENTRYPOINT`: ensures the entrypoint always executes.
+- `/etc/claude-dock-build-source`: written at build time from the `CLAUDE_DOCK_SOURCE_PATH`/`CLAUDE_DOCK_VERSION` build args, as `local:<path>` or `github:<ref>`. Lets `entrypoint.sh` and `scripts/status.sh` report unambiguously which source produced the running image (mirrors the existing `/etc/claude-code-version` marker pattern).
 
 **What NOT to do in the Dockerfile:**
 - Do not add packages without clear justification
@@ -301,13 +302,15 @@ tmux new-session -s main claude --dangerously-skip-permissions
 - `stdin_open: true` and `tty: true`: required for Claude Code TUI
 - `restart: unless-stopped`: automatic restart without blocking manual stops
 - `container_name: ${CONTAINER_NAME:-claude-code-dock}`: name driven by `.env`; scripts depend on a stable, known name
-- `image: ${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest}` + `build:`: both present intentionally — `image:` is what `docker compose pull` (the default install/update path) fetches; `build:` is the fallback path used when `CLAUDE_SOURCE_PATH` is set or someone explicitly runs `docker compose build`
+- `image: ${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest}` + `build:`: both present intentionally — `image:` is what `docker compose pull` (the default install/update path) fetches; `build:` is the fallback path used when `CLAUDE_SOURCE_PATH` is set or someone explicitly runs `docker compose build`. `build.args` also passes `CLAUDE_DOCK_SOURCE_PATH` (raw `CLAUDE_SOURCE_PATH`) and `CLAUDE_DOCK_VERSION` through so the Dockerfile can bake which one was used into `/etc/claude-dock-build-source` — read by `entrypoint.sh`'s startup log and `scripts/status.sh`.
+- Because `image:` + `build:` coexist, Compose only builds when the tag isn't already present locally — a bare `docker compose up -d` will NOT rebuild an already-tagged image, even with `CLAUDE_SOURCE_PATH` set. `install.sh`/`update.sh` handle this correctly by explicitly calling `docker compose build --no-cache` whenever `CLAUDE_SOURCE_PATH` is set (never relying on `up -d` alone). Anyone bypassing the scripts must do the same: `docker compose build --no-cache && docker compose up -d`, or `docker compose up -d --build`. See `docs/docker.md#local-development`.
 
 **What NOT to change without good reason:**
 - Do not remove `stdin_open` or `tty` (breaks the interface)
 - Do not change to `restart: always` (prevents manual maintenance)
 - Do not change the `container_name` default or remove the `CONTAINER_NAME` variable (breaks all scripts when the variable is unset)
 - Do not remove `image:` in favor of `build:`-only (breaks the pull-first fast path in `install.sh`/`update.sh`) or vice versa (breaks `CLAUDE_SOURCE_PATH`-based local dev)
+- Do not make `CLAUDE_SOURCE_PATH` local builds rely on Docker's layer cache or on an image tag already being absent — always force `--no-cache` in scripts, since `CLAUDE_SOURCE_PATH` must deterministically win with zero cache dependency
 
 ---
 

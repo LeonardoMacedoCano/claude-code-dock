@@ -91,6 +91,17 @@ if [ "${CONTAINER_STATUS}" = "running" ]; then
     CLAUDE_VERSION=$(docker exec "${CONTAINER_NAME}" cat /etc/claude-code-version 2>/dev/null || echo "unavailable")
     row "Version:" "${CLAUDE_VERSION}"
 
+    BUILD_SOURCE_RAW=$(docker exec "${CONTAINER_NAME}" cat /etc/claude-dock-build-source 2>/dev/null || echo "")
+    if [ -n "${BUILD_SOURCE_RAW}" ]; then
+        BUILD_SOURCE_KIND="${BUILD_SOURCE_RAW%%:*}"
+        BUILD_SOURCE_REF="${BUILD_SOURCE_RAW#*:}"
+        if [ "${BUILD_SOURCE_KIND}" = "local" ]; then
+            row "Build source:" "local clone (CLAUDE_SOURCE_PATH=${BUILD_SOURCE_REF})" "${YELLOW}"
+        else
+            row "Build source:" "GitHub (ref: ${BUILD_SOURCE_REF})"
+        fi
+    fi
+
     if [ "${CLAUDE_VERSION}" != "unavailable" ] && command -v curl &>/dev/null; then
         # `|| true`: under `set -e`, a curl failure or a grep miss (both exit
         # non-zero) would otherwise abort this whole script instead of just

@@ -5,11 +5,23 @@ services:
     # (fast — no local apt-get/npm install). `build:` stays as the fallback path
     # for CLAUDE_SOURCE_PATH (local dev/testing of claude-code-dock itself) or
     # `docker compose build` when a prebuilt image isn't available/desired.
+    #
+    # IMPORTANT: because both keys are set, a bare `docker compose up -d` will
+    # NOT rebuild if an image already exists locally under this tag (e.g. from
+    # a prior `docker compose pull`) — Compose only builds when the tag is
+    # missing or a build is explicitly requested. So CLAUDE_SOURCE_PATH only
+    # takes priority if you force the build yourself:
+    #   docker compose build --no-cache && docker compose up -d
+    #   (or the one-liner: docker compose up -d --build)
+    # scripts/install.sh and scripts/update.sh already do this automatically
+    # whenever CLAUDE_SOURCE_PATH is set. See docs/docker.md#local-development.
     image: ${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest}
     build:
       context: ${CLAUDE_SOURCE_PATH:-https://github.com/LeonardoMacedoCano/claude-code-dock.git#${CLAUDE_DOCK_VERSION:-main}}
       args:
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
+        CLAUDE_DOCK_SOURCE_PATH: ${CLAUDE_SOURCE_PATH:-}
+        CLAUDE_DOCK_VERSION: ${CLAUDE_DOCK_VERSION:-main}
     environment:
       - AUTO_START_MODE=${AUTO_START_MODE:-interactive}
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-true}
