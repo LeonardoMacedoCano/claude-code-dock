@@ -23,6 +23,81 @@ claude-code-dock is a Docker infrastructure solution for running **Claude Code**
 
 ---
 
+## AI Guidelines — GitHub Operations
+
+These rules apply whenever the user asks Claude Code to perform any GitHub or Git operation (push, pull, clone, commit, etc.).
+
+### 1. Always verify Git configuration before acting
+
+Before executing any GitHub-related task, check whether the following variables are set in `.env`:
+
+| Variable | Required for |
+|----------|-------------|
+| `GIT_USER_NAME` | Commit authorship |
+| `GIT_USER_EMAIL` | Commit authorship |
+| `GITHUB_TOKEN` | Push, pull from private repos, any authenticated operation |
+| `GIT_REPO_URL` | Auto-clone on startup |
+
+**If any required variable is missing or empty**, stop and inform the user. Do not proceed with the operation. Explain which variable is missing and how to configure it:
+
+```
+The variable GITHUB_TOKEN is not set in your .env file.
+Without it, git push/pull to GitHub will fail.
+
+To configure it:
+1. Go to https://github.com/settings/tokens → "Generate new token (classic)"
+2. Name it (e.g. claude-code-dock), select scope "repo", generate and copy
+3. Open your .env file and add:
+   GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+4. Restart the container: docker compose restart
+```
+
+Apply the same pattern for `GIT_USER_NAME` and `GIT_USER_EMAIL`:
+
+```
+The variables GIT_USER_NAME and GIT_USER_EMAIL are not set in your .env file.
+Without them, git commits will have no author identity.
+
+To configure them, open your .env file and add:
+   GIT_USER_NAME=Your Name
+   GIT_USER_EMAIL=your@email.com
+
+Then restart the container: docker compose restart
+```
+
+### 2. Always use HTTPS for push and pull
+
+Never use SSH URLs (`git@github.com:...`) for remote operations. The container has no SSH keys configured.
+
+Always use the HTTPS form:
+```bash
+# Correct
+git remote set-url origin https://github.com/user/repo.git
+git push
+git pull
+
+# Wrong — will fail
+git remote set-url origin git@github.com:user/repo.git
+```
+
+If the current remote is SSH, switch it to HTTPS before proceeding:
+```bash
+git remote set-url origin https://github.com/USER/REPO.git
+```
+
+### 3. Checklist before any GitHub operation
+
+```
+[ ] GIT_USER_NAME set in .env?
+[ ] GIT_USER_EMAIL set in .env?
+[ ] GITHUB_TOKEN set in .env? (required for push/pull)
+[ ] Remote URL is HTTPS (not SSH)?
+```
+
+If any item is missing, inform the user and pause. Never silently skip a check or attempt to work around a missing credential.
+
+---
+
 ## Goals
 
 ### Primary Goal
@@ -209,12 +284,12 @@ tmux new-session -s main claude --dangerously-skip-permissions
 **Critical fields:**
 - `stdin_open: true` and `tty: true`: required for Claude Code TUI
 - `restart: unless-stopped`: automatic restart without blocking manual stops
-- `container_name: claude-code-dock`: fixed name so scripts work correctly
+- `container_name: ${CONTAINER_NAME:-claude-code-dock}`: name driven by `.env`; scripts depend on a stable, known name
 
 **What NOT to change without good reason:**
 - Do not remove `stdin_open` or `tty` (breaks the interface)
 - Do not change to `restart: always` (prevents manual maintenance)
-- Do not change `container_name` (breaks all scripts)
+- Do not change the `container_name` default or remove the `CONTAINER_NAME` variable (breaks all scripts when the variable is unset)
 
 ---
 
