@@ -15,6 +15,10 @@ services:
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-true}
       - CLAUDE_EXTRA_ARGS=${CLAUDE_EXTRA_ARGS:-}
       - REMOTE_SESSION_NAME=${REMOTE_SESSION_NAME:-}
+      # Host-side paths, passed through so a startup permission failure can
+      # print the exact host command to fix it instead of a generic placeholder.
+      - CONFIG_BASE_PATH=${CONFIG_BASE_PATH:-}
+      - WORKSPACE_PATH=${WORKSPACE_PATH:-}
       - TZ=${TZ:-UTC}
       - GIT_USER_NAME=${GIT_USER_NAME:-}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}

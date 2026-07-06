@@ -47,14 +47,25 @@ fi
 # volume. docker logs / the Unraid "Logs" tab only shows this cleanly until
 # tmux takes over the tty; after that they render the raw terminal screen
 # instead of scrolling log lines. This file stays readable regardless.
+#
+# The whole command is wrapped in `{ ...; } 2>/dev/null` rather than
+# redirecting the printf's own stderr: when LOG_FILE's directory doesn't
+# exist (e.g. config dir not writable yet), the failed `>>` open is a
+# redirection error that bash reports on the *shell's* stderr before the
+# command's own `2>/dev/null` would apply to it — it would otherwise leak
+# a raw "No such file or directory" line into docker logs. Redirecting the
+# whole group's stderr first (outer redirection, established before the
+# body runs) suppresses that too.
 log_write() {
-    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$(sed -E 's/(\x1b|\\033)\[[0-9;]*m//g' <<< "$2")" >> "${LOG_FILE}" 2>/dev/null || true
+    { printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$(sed -E 's/(\x1b|\\033)\[[0-9;]*m//g' <<< "$2")" >> "${LOG_FILE}"; } 2>/dev/null || true
 }
 
-log_info()  { echo -e "  ${GREEN}✓${RESET} $1"; log_write "INFO"  "$1"; }
-log_warn()  { echo -e "  ${YELLOW}⚠${RESET} $1"; log_write "WARN"  "$1"; }
-log_error() { echo -e "  ${RED}✗${RESET} $1"; log_write "ERROR" "$1"; }
-log_step()  { echo -e "  ${CYAN}→${RESET} $1"; log_write "STEP"  "$1"; }
+ts() { date '+%Y-%m-%d %H:%M:%S'; }
+
+log_info()  { echo -e "  ${GREEN}[$(ts)] ✓${RESET} $1"; log_write "INFO"  "$1"; }
+log_warn()  { echo -e "  ${YELLOW}[$(ts)] ⚠${RESET} $1"; log_write "WARN"  "$1"; }
+log_error() { echo -e "  ${RED}[$(ts)] ✗${RESET} $1"; log_write "ERROR" "$1"; }
+log_step()  { echo -e "  ${CYAN}[$(ts)] →${RESET} $1"; log_write "STEP"  "$1"; }
 
 # Stops startup on unrecoverable misconfiguration. Deliberately does NOT
 # `exit` — under `restart: unless-stopped`, exiting here just restarts the
@@ -109,16 +120,24 @@ validate_config() {
 
     if ! mkdir -p "${HOME}/.claude" 2>/dev/null || \
        ! ( touch "${HOME}/.claude/.write_test" 2>/dev/null && rm -f "${HOME}/.claude/.write_test" 2>/dev/null ); then
+        local config_owner
+        config_owner=$(stat -c '%U:%G (uid=%u, gid=%g)' "${HOME}/.claude" 2>/dev/null || echo "unknown")
+        local config_host_path="<your CONFIG_BASE_PATH>/${REMOTE_SESSION_NAME:-<session>}"
+        [ -n "${CONFIG_BASE_PATH:-}" ] && [ -n "${REMOTE_SESSION_NAME:-}" ] && \
+            config_host_path="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
         fatal "Config directory is not writable" \
-            "/home/node/.claude (bind-mounted from CONFIG_BASE_PATH/REMOTE_SESSION_NAME on the host) cannot be written by UID 1000 (user 'node')." \
-            "    On the host, fix ownership of the directory:\n    ${BOLD}chown -R 1000:1000 <your CONFIG_BASE_PATH>/${REMOTE_SESSION_NAME:-<session>}${RESET}\n\n    Also confirm CONFIG_BASE_PATH is actually set in .env — when it is empty it\n    silently falls back to ./configs, which Docker then creates owned by root."
+            "/home/node/.claude (bind-mounted from CONFIG_BASE_PATH/REMOTE_SESSION_NAME on the host) is owned by ${BOLD}${config_owner}${RESET}, but this container runs as ${BOLD}node (uid=1000, gid=1000)${RESET} and cannot write to it.\n\n  This almost always means the folder did not exist on the host yet, so Docker auto-created it as root the moment this container started." \
+            "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R 1000:1000 ${config_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}\n\n    If CONFIG_BASE_PATH is not set in .env, set it first — otherwise it\n    silently falls back to ./configs, also created owned by root.\n    scripts/install.sh does this chown for you automatically on first setup."
     fi
 
     if ! mkdir -p "${WORKSPACE_DIR:-/workspace}" 2>/dev/null || \
        ! ( touch "${WORKSPACE_DIR:-/workspace}/.write_test" 2>/dev/null && rm -f "${WORKSPACE_DIR:-/workspace}/.write_test" 2>/dev/null ); then
+        local workspace_owner
+        workspace_owner=$(stat -c '%U:%G (uid=%u, gid=%g)' "${WORKSPACE_DIR:-/workspace}" 2>/dev/null || echo "unknown")
+        local workspace_host_path="${WORKSPACE_PATH:-<your WORKSPACE_PATH>}"
         fatal "Workspace directory is not writable" \
-            "${WORKSPACE_DIR:-/workspace} (bind-mounted from WORKSPACE_PATH on the host) cannot be written by UID 1000 (user 'node')." \
-            "    On the host, fix ownership of the directory:\n    ${BOLD}chown -R 1000:1000 <your WORKSPACE_PATH>${RESET}"
+            "${WORKSPACE_DIR:-/workspace} (bind-mounted from WORKSPACE_PATH on the host) is owned by ${BOLD}${workspace_owner}${RESET}, but this container runs as ${BOLD}node (uid=1000, gid=1000)${RESET} and cannot write to it." \
+            "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R 1000:1000 ${workspace_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}"
     fi
 
     log_info "Configuration OK: mode=${mode}, config dir writable, workspace writable."
