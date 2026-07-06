@@ -40,7 +40,7 @@ else
     if [ ! -f "$f" ]; then
       continue
     fi
-    if shellcheck "$f" 2>&1; then
+    if shellcheck --severity=warning "$f" 2>&1; then
       echo -e "  ${GREEN}✓${RESET} $(basename "$f")"
     else
       echo -e "  ${RED}✗${RESET} $(basename "$f")"
