@@ -102,10 +102,15 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  ENV_BACKUP="$(ls "$TMP_PROJECT/backups/"*.env.backup 2>/dev/null | head -1)"
-  [ -n "$ENV_BACKUP" ]
-  run grep -E "^(GITHUB_TOKEN|CLAUDE_API_KEY)=" "$ENV_BACKUP"
+  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  [ -n "$ARCHIVE" ]
+
+  EXTRACT_DIR="$(mktemp -d)"
+  tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR" .env.backup 2>/dev/null
+  [ -f "$EXTRACT_DIR/.env.backup" ]
+  run grep -E "^(GITHUB_TOKEN|CLAUDE_API_KEY)=" "$EXTRACT_DIR/.env.backup"
   [ "$status" -ne 0 ]
+  rm -rf "$EXTRACT_DIR"
 }
 
 @test "respects BACKUP_RETENTION env var when set to a custom value" {

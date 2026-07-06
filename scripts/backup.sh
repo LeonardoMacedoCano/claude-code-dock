@@ -216,6 +216,11 @@ manage_old_backups() {
     fi
     RETENTION="${BACKUP_RETENTION:-${RETENTION}}"
 
+    if ! [[ "${RETENTION}" =~ ^[0-9]+$ ]] || [ "${RETENTION}" -lt 1 ]; then
+        warn "BACKUP_RETENTION='${RETENTION}' is not a valid positive integer — using default of 10."
+        RETENTION=10
+    fi
+
     BACKUP_COUNT=$(ls -1 "${OUTPUT_DIR}"/${BACKUP_PATTERN} 2>/dev/null | wc -l)
     ok "Total backups in ${OUTPUT_DIR}: ${BACKUP_COUNT} (retention: ${RETENTION})"
 

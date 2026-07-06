@@ -235,6 +235,12 @@ print_next_steps() {
     echo -e "  ${CYAN}5.${RESET} To view logs:"
     echo -e "     ${BOLD}./scripts/logs.sh${RESET}"
     echo ""
+    echo -e "  ${CYAN}6.${RESET} To add another session (new project):"
+    echo -e "     ${BOLD}./scripts/new-session.sh${RESET}"
+    echo ""
+    echo -e "  ${CYAN}7.${RESET} To list all running sessions:"
+    echo -e "     ${BOLD}./scripts/sessions.sh${RESET}"
+    echo ""
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo ""
 }

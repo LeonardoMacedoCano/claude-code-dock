@@ -85,3 +85,10 @@ teardown() {
   grep -q "^--verbose$" "$TEST_TMPDIR/tmux_args"
   grep -q "^--debug$"   "$TEST_TMPDIR/tmux_args"
 }
+
+@test "tmux session is always named 'main'" {
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+  [ -f "$TEST_TMPDIR/tmux_args" ]
+  grep -q "^main$" "$TEST_TMPDIR/tmux_args"
+}

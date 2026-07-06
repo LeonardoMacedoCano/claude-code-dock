@@ -71,7 +71,7 @@ cp /srv/claude-code-dock/docker-compose.yml /srv/projects/homepage/docker-compos
 ```env
 CONTAINER_NAME=claude-code-dock-homepage
 CLAUDE_SOURCE_PATH=/srv/claude-code-dock
-CONFIG_PATH=/srv/claude-config
+CONFIG_BASE_PATH=/srv/claude-code-dock/configs
 WORKSPACE_PATH=/srv/www/homepage
 AUTO_START_MODE=remote
 CLAUDE_AUTO_APPROVE=true
@@ -98,9 +98,9 @@ docker compose up -d
 docker exec -it claude-code-dock-homepage tmux attach-session -t main
 ```
 
-Complete the authentication flow. Credentials are saved to `/srv/claude-config/`. Disconnect with `Ctrl+B, D` — the container keeps running.
+Complete the authentication flow. Credentials are saved to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` (e.g. `/srv/claude-code-dock/configs/HomePage/`). Disconnect with `Ctrl+B, D` — the container keeps running.
 
-For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PATH`, and `REMOTE_SESSION_NAME` — same `CONFIG_PATH`, no login required.
+For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PATH`, and `REMOTE_SESSION_NAME` — same `CONFIG_BASE_PATH`, no login required.
 
 ---
 
@@ -110,11 +110,11 @@ For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PAT
 |----------|---------|-------------|
 | `CONTAINER_NAME` | `claude-code-dock` | Docker container name — must be unique per container on the same host |
 | `CLAUDE_SOURCE_PATH` | `.` | Path to the claude-code-dock clone on the host |
-| `CONFIG_PATH` | `./config` | Credentials folder — share this across all containers |
+| `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories — share this across all containers |
+| `REMOTE_SESSION_NAME` | `` | Unique session ID — credentials stored at `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` |
 | `WORKSPACE_PATH` | `./workspaces` | This container's project folder |
 | `AUTO_START_MODE` | `interactive` | `interactive`, `remote`, or `shell` |
 | `CLAUDE_AUTO_APPROVE` | `true` | Enables `--dangerously-skip-permissions` |
-| `REMOTE_SESSION_NAME` | `` | Session name shown in Claude.ai Remote Control |
 | `CLAUDE_EXTRA_ARGS` | `` | Extra arguments passed to Claude |
 | `TZ` | `UTC` | Container timezone |
 | `GIT_USER_NAME` | `` | Name for git commit authorship |
@@ -160,13 +160,16 @@ GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ## Scripts
 
 ```bash
+./scripts/install.sh      # Guided initial setup
+./scripts/new-session.sh  # Create a new isolated session (.env.<name>)
+./scripts/sessions.sh     # List all claude-code-dock containers and their status
 ./scripts/attach.sh       # Attach to the tmux session where Claude is running
 ./scripts/shell.sh        # Open a separate bash shell in the container
 ./scripts/logs.sh         # Stream container logs
+./scripts/status.sh       # Show status, credentials, workspace, and backups for a session
 ./scripts/update.sh       # Rebuild with latest Claude Code, restart
 ./scripts/backup.sh       # Backup credentials and workspace
 ./scripts/restore.sh      # Restore from a backup
-./scripts/install.sh      # Guided initial setup
 ./scripts/claude.sh       # Run Claude via docker exec (separate session)
 ./scripts/remote.sh       # Temporary Remote Control session via docker exec
 ```
@@ -179,7 +182,7 @@ GIT_REPO_URL=https://github.com/your-user/your-repo.git
 |---------|----------|
 | Container does not start | `docker compose logs` |
 | Session not in Remote Control | Check `AUTO_START_MODE=remote` and `REMOTE_SESSION_NAME` |
-| Asks for login on every restart | Verify `CONFIG_PATH` is the same folder across all containers |
+| Asks for login on every restart | Verify `CONFIG_BASE_PATH` is the same value across all containers |
 | Remote Control session frozen | SSH → `docker exec -it <name> tmux attach-session -t main` → unblock |
 | `git push` fails | Set `GITHUB_TOKEN` in `.env` |
 | Permission denied on workspace | `chown -R 1000:1000 /your/workspace/` on the host |

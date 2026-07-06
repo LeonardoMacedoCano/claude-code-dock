@@ -100,14 +100,29 @@ list_backups() {
 }
 
 BACKUP_FILE=""
+DRY_RUN=false
 
 case "${1:-}" in
     --list|-l)
         list_backups
         ;;
+    --dry-run|-n)
+        DRY_RUN=true
+        BACKUP_FILE="${2:-}"
+        if [ -z "${BACKUP_FILE}" ]; then
+            LATEST=$(ls -1t "${DEFAULT_BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | head -1 || echo "")
+            if [ -z "${LATEST}" ]; then
+                echo ""
+                echo -e "${RED}[✗]${RESET} No backup found. Use --list to see available backups."
+                exit 1
+            fi
+            BACKUP_FILE="${LATEST}"
+        fi
+        ;;
     -h|--help)
         echo "Usage: $0 <backup-file.tar.gz>"
-        echo "       $0 --list    (list available backups)"
+        echo "       $0 --list         (list available backups)"
+        echo "       $0 --dry-run [file]  (show archive contents without restoring)"
         exit 0
         ;;
     "")
@@ -167,6 +182,12 @@ tar -tzf "${BACKUP_FILE}" | head -20 | while read -r line; do
     echo -e "    ${CYAN}→${RESET} ${line}"
 done
 echo ""
+
+if [ "${DRY_RUN}" == "true" ]; then
+    echo -e "  ${YELLOW}Dry run — no data was modified.${RESET}"
+    echo ""
+    exit 0
+fi
 
 echo -e "  ${RED}${BOLD}WARNING: This operation will overwrite current data!${RESET}"
 echo ""
