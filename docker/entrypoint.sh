@@ -118,7 +118,7 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
 fi
 
 if [ -n "${GIT_REPO_URL:-}" ]; then
-    WORKSPACE_EMPTY=$(find "${WORKSPACE_DIR:-/workspace}" -mindepth 1 -maxdepth 1 2>/dev/null | head -1)
+    WORKSPACE_EMPTY=$(find "${WORKSPACE_DIR:-/workspace}" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' 2>/dev/null | head -1)
     if [ -z "${WORKSPACE_EMPTY}" ]; then
         log_step "Cloning repository into /workspace..."
         if git clone "${GIT_REPO_URL}" /workspace 2>&1 | while IFS= read -r line; do log_info "${line}"; done; then

@@ -47,6 +47,10 @@ USER node
 VOLUME ["/home/node/.claude"]
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD tmux has-session -t main 2>/dev/null || kill -0 1 2>/dev/null || exit 1
+    CMD if [ "${AUTO_START_MODE:-interactive}" = "shell" ]; then \
+            kill -0 1 2>/dev/null || exit 1; \
+        else \
+            tmux has-session -t main 2>/dev/null || exit 1; \
+        fi
 
 ENTRYPOINT ["/bin/bash", "/usr/local/bin/entrypoint.sh"]

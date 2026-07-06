@@ -40,7 +40,7 @@ done
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             claude-code-dock — Update                     ║${RESET}"
+    echo -e "${CYAN}${BOLD}║              claude-code-dock — Update               ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }

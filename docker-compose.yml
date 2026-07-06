@@ -30,3 +30,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # Resource limits — uncomment and adjust for your server (recommended for shared homelabs)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2g
+    #     reservations:
+    #       memory: 512m

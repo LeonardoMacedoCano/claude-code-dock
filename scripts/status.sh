@@ -37,7 +37,7 @@ fi
 header() {
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}${BOLD}║             claude-code-dock — Status                     ║${RESET}"
+    echo -e "${CYAN}${BOLD}║              claude-code-dock — Status               ║${RESET}"
     echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     echo ""
 }

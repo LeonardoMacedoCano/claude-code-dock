@@ -10,6 +10,7 @@ TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR="${PROJECT_DIR}/backups"
 INCLUDE_WORKSPACE=false
 QUIET=false
+MASKED_ENV_TMPDIR=""
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -147,9 +148,10 @@ backup_env() {
 
     step "Backing up .env (secrets masked)..."
 
-    local env_backup="${OUTPUT_DIR}/${BACKUP_NAME}.env.backup"
-    grep -vE "^(GITHUB_TOKEN|CLAUDE_API_KEY)\s*=" "${ENV_FILE}" > "${env_backup}" 2>/dev/null || true
-    ok ".env backed up (GITHUB_TOKEN and secrets excluded): $(basename "${env_backup}")"
+    MASKED_ENV_TMPDIR=$(mktemp -d)
+    grep -vE "^(GITHUB_TOKEN|CLAUDE_API_KEY)\s*=" "${ENV_FILE}" \
+        > "${MASKED_ENV_TMPDIR}/.env.backup" 2>/dev/null || true
+    ok ".env backed up (GITHUB_TOKEN and secrets excluded — included in archive)"
 }
 
 create_backup_archive() {
@@ -192,7 +194,13 @@ create_backup_archive() {
         fi
     fi
 
+    if [ -n "${MASKED_ENV_TMPDIR}" ] && [ -f "${MASKED_ENV_TMPDIR}/.env.backup" ]; then
+        tar_cmd+=("-C" "${MASKED_ENV_TMPDIR}" ".env.backup")
+    fi
+
     "${tar_cmd[@]}"
+
+    [ -n "${MASKED_ENV_TMPDIR}" ] && rm -rf "${MASKED_ENV_TMPDIR}"
 
     BACKUP_SIZE=$(du -sh "${BACKUP_FILE}" 2>/dev/null | cut -f1 || echo "unknown")
     ok "Backup created: ${BOLD}${BACKUP_FILE}${RESET} (${BACKUP_SIZE})"
