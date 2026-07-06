@@ -165,7 +165,7 @@ GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ./scripts/sessions.sh     # List all claude-code-dock containers and their status
 ./scripts/attach.sh       # Attach to the tmux session where Claude is running
 ./scripts/shell.sh        # Open a separate bash shell in the container
-./scripts/logs.sh         # Stream container logs
+./scripts/logs.sh         # Stream container logs (--app for the persistent startup log)
 ./scripts/status.sh       # Show status, credentials, workspace, and backups for a session
 ./scripts/update.sh       # Rebuild with latest Claude Code, restart
 ./scripts/backup.sh       # Backup credentials and workspace
@@ -181,6 +181,7 @@ GIT_REPO_URL=https://github.com/your-user/your-repo.git
 | Problem | Solution |
 |---------|----------|
 | Container does not start | `docker compose logs` |
+| `docker logs` / Unraid Logs tab shows nothing or terminal garbage | Expected once Claude starts (PID 1 is a tmux TUI) — use `./scripts/logs.sh --app` |
 | Session not in Remote Control | Check `AUTO_START_MODE=remote` and `REMOTE_SESSION_NAME` |
 | Asks for login on every restart | Verify `CONFIG_BASE_PATH` is the same value across all containers |
 | Remote Control session frozen | SSH → `docker exec -it <name> tmux attach-session -t main` → unblock |

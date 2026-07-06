@@ -283,6 +283,17 @@ To disconnect without stopping Claude: `Ctrl+B` then `D`.
 
 The Console opens directly into the Claude Code session. To disconnect: `Ctrl+B` then `D`.
 
+### About the "Logs" tab in the Docker UI
+
+Unraid's **Logs** button just runs `docker logs`, which shows PID 1's raw
+stdout. Since PID 1 is tmux running Claude Code as a full-screen TUI, that tab
+will look empty or garbled once the session starts — it is not able to show
+scrolling log lines from an interactive terminal app. This is expected; see
+[troubleshooting.md](troubleshooting.md#logs-problems). For a clean, persistent
+startup log instead, run `./scripts/logs.sh --app` over SSH, or read
+`./configs/<session>/logs/dock.log` directly — it lives in the bind-mounted
+config folder shown above.
+
 ### Via debug shell (separate process)
 
 To inspect the container without interfering with Claude Code:

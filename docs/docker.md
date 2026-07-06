@@ -157,7 +157,18 @@ docker exec claude-code-dock env | sort
 
 ## Logs
 
-### View logs in real time
+There are two different kinds of logs, and they answer different questions.
+
+### Container logs (`docker logs`)
+
+This is the raw stdout/stderr of PID 1. It is useful only during the entrypoint's
+startup phase (banner, environment checks, git setup). Once Claude Code starts,
+PID 1 becomes tmux running a full-screen TUI, and `docker logs` simply mirrors
+whatever is currently drawn on that terminal — not scrolling log lines. This is
+also what the Unraid "Logs" button in the Docker UI shows, since it just runs
+`docker logs` under the hood: expect it to look empty or garbled (raw ANSI/cursor
+codes) once the session is running. That is expected given the [PID 1
+architecture](architecture.md), not a bug.
 
 ```bash
 # Via helper script
@@ -172,6 +183,24 @@ docker logs -f --tail 100 claude-code-dock
 # Logs from the last hour
 docker logs --since 1h claude-code-dock
 ```
+
+### Startup log (`dock.log`)
+
+The entrypoint also writes a plain-text, timestamped copy of every setup step
+(mode, git config, clone result, warnings, errors, the final command executed)
+to `${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}/logs/dock.log`. This file is
+untouched by tmux/Claude, so it stays readable across restarts and is what you
+want for diagnosing startup issues:
+
+```bash
+# Via helper script (tails the file directly from the host, no container needed)
+./scripts/logs.sh --app
+
+# Or read it directly — it lives in the bind-mounted config volume
+tail -f ./configs/<session>/logs/dock.log
+```
+
+It is capped at ~2000 lines and trimmed automatically on each container start.
 
 ---
 

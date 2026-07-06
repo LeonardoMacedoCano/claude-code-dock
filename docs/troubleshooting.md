@@ -214,6 +214,43 @@ echo 'set -g default-terminal "screen-256color"' >> ~/.tmux.conf
 
 ---
 
+## Logs Problems
+
+### `docker logs` / Unraid "Logs" tab shows nothing, or shows the terminal screen
+
+**Symptom:** Opening the container's "Logs" tab in the Unraid Docker UI (or
+running `docker logs claude-code-dock`) shows either nothing useful, or what
+looks like a frozen/garbled snapshot of the Claude Code terminal instead of
+scrolling log lines.
+
+**Cause:** This is expected given this project's [PID 1
+architecture](architecture.md). PID 1 is tmux running Claude Code as a
+full-screen TUI attached to the container's tty. `docker logs` (and Unraid's
+"Logs" button, which just calls `docker logs`) only captures raw stdout/stderr
+— it has no concept of tmux's screen redraws, cursor movement, or the alternate
+screen buffer, so it either mirrors whatever is currently on screen or appears
+empty. It only shows clean, readable text during the entrypoint's own startup
+phase, before Claude Code takes over the tty.
+
+**Solution:** Use the persisted, plain-text startup log instead — it is written
+by the entrypoint outside of tmux's control and survives restarts:
+
+```bash
+./scripts/logs.sh --app
+```
+
+or read it directly from the host, since it lives in the bind-mounted config
+volume:
+
+```bash
+tail -f ./configs/<session>/logs/dock.log
+```
+
+To watch the live Claude Code session itself (not logs), use `./scripts/attach.sh`
+or the Unraid container Console instead.
+
+---
+
 ## Authentication Problems
 
 ### Claude Code asks for login every time the container restarts

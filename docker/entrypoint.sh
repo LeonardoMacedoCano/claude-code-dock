@@ -34,10 +34,29 @@ print_banner() {
     echo ""
 }
 
-log_info()  { echo -e "  ${GREEN}✓${RESET} $1"; }
-log_warn()  { echo -e "  ${YELLOW}⚠${RESET} $1"; }
-log_error() { echo -e "  ${RED}✗${RESET} $1"; }
-log_step()  { echo -e "  ${CYAN}→${RESET} $1"; }
+LOG_DIR="${HOME}/.claude/logs"
+LOG_FILE="${LOG_DIR}/dock.log"
+LOG_MAX_LINES=2000
+mkdir -p "${LOG_DIR}" 2>/dev/null || true
+
+if [ -f "${LOG_FILE}" ] && [ "$(wc -l < "${LOG_FILE}" 2>/dev/null || echo 0)" -gt "${LOG_MAX_LINES}" ]; then
+    tail -n "${LOG_MAX_LINES}" "${LOG_FILE}" > "${LOG_FILE}.tmp" 2>/dev/null && mv "${LOG_FILE}.tmp" "${LOG_FILE}"
+fi
+
+# Plain-text, ANSI-free copy of the setup steps below, persisted in the config
+# volume. docker logs / the Unraid "Logs" tab only shows this cleanly until
+# tmux takes over the tty; after that they render the raw terminal screen
+# instead of scrolling log lines. This file stays readable regardless.
+log_write() {
+    printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$(sed -E 's/(\x1b|\\033)\[[0-9;]*m//g' <<< "$2")" >> "${LOG_FILE}" 2>/dev/null || true
+}
+
+log_info()  { echo -e "  ${GREEN}✓${RESET} $1"; log_write "INFO"  "$1"; }
+log_warn()  { echo -e "  ${YELLOW}⚠${RESET} $1"; log_write "WARN"  "$1"; }
+log_error() { echo -e "  ${RED}✗${RESET} $1"; log_write "ERROR" "$1"; }
+log_step()  { echo -e "  ${CYAN}→${RESET} $1"; log_write "STEP"  "$1"; }
+
+log_write "STEP" "──── container start ────"
 
 print_banner
 
