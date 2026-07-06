@@ -41,6 +41,23 @@ fail() {
     exit 1
 }
 
+# The container runs as UID 1000 ('node'). Directories created here by
+# install.sh (often run as root over SSH on Unraid/NAS) would otherwise stay
+# root-owned, leaving the container unable to write its own config/workspace
+# at startup — the #1 cause of silent restart loops. Best-effort: some hosts
+# (rootless Docker, non-root install.sh runs, NFS with root-squash) can't
+# chown to an arbitrary UID, so failures just fall back to a manual hint.
+fix_ownership() {
+    local dir="$1"
+    if chown -R 1000:1000 "${dir}" 2>/dev/null; then
+        ok "Ownership set to UID 1000 (node): ${dir}"
+    else
+        warn "Could not chown ${dir} to 1000:1000 (not root, or unsupported filesystem)."
+        echo -e "    If the container fails to start with a 'not writable' error, run manually:"
+        echo -e "    ${BOLD}chown -R 1000:1000 ${dir}${RESET}"
+    fi
+}
+
 check_docker() {
     step "Checking Docker..."
 
@@ -135,6 +152,7 @@ check_env() {
             if [[ "${CREATE_DIR,,}" == "y" ]]; then
                 mkdir -p "${WORKSPACE_PATH}"
                 ok "Directory created: ${WORKSPACE_PATH}"
+                fix_ownership "${WORKSPACE_PATH}"
             else
                 warn "Continuing anyway, but the workspace will be empty."
             fi
@@ -150,11 +168,13 @@ check_env() {
     CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
     mkdir -p "${CONFIG_DIR}"
     ok "Session config dir: ${CONFIG_DIR}"
+    fix_ownership "${CONFIG_DIR}"
 
     if [ -n "${SHARED_CONFIG_PATH:-}" ]; then
         mkdir -p "${SHARED_CONFIG_PATH}"
         mkdir -p "${SHARED_CONFIG_PATH}/commands"
         ok "SHARED_CONFIG_PATH: ${SHARED_CONFIG_PATH}"
+        fix_ownership "${SHARED_CONFIG_PATH}"
     fi
 
     if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
@@ -163,6 +183,12 @@ check_env() {
         ok "Building from GitHub: ${CLAUDE_DOCK_VERSION:-main}"
     fi
 
+    case "${AUTO_START_MODE:-interactive}" in
+        interactive|remote|shell) ;;
+        *)
+            fail "AUTO_START_MODE=\"${AUTO_START_MODE}\" is not valid. Use one of: interactive, remote, shell."
+            ;;
+    esac
     ok "AUTO_START_MODE: ${AUTO_START_MODE:-interactive}"
 }
 

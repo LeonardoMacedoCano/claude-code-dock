@@ -36,6 +36,7 @@ echo ""
 
 BATS_FILES=(
   "$SCRIPT_DIR/entrypoint_modes.bats"
+  "$SCRIPT_DIR/entrypoint_validation.bats"
   "$SCRIPT_DIR/entrypoint_symlink.bats"
   "$SCRIPT_DIR/entrypoint_settings.bats"
   "$SCRIPT_DIR/entrypoint_shared_config.bats"

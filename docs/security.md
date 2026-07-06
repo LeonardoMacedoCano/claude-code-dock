@@ -21,30 +21,32 @@ claude-code-dock is designed for use in **personal and homelab environments** â€
 
 ### What are Claude Code credentials?
 
-Claude Code stores authentication credentials in the `~/.claude/` directory. In the container, this maps to `/home/node/.claude/` (user `node`, UID 1000), which is persisted in `./config/` on the host.
+Claude Code stores authentication credentials in the `~/.claude/` directory. In the container, this maps to `/home/node/.claude/` (user `node`, UID 1000), which is persisted in `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` on the host.
 
 These credentials allow Claude Code to authenticate with Anthropic's servers.
 
 ### Best practices for protection
 
-**1. Never commit `./config/` to git:**
+**1. Never commit the config directory to git:**
 
 The `.gitignore` already excludes this directory. Verify periodically:
 
 ```bash
-# Confirm that config/ is ignored
-git check-ignore -v config/
+# Confirm the session's config dir is ignored
+git check-ignore -v "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}"
 ```
 
 **2. Restricted permissions on the host:**
 
 ```bash
+CONFIG_DIR="${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}"
+
 # Set correct permissions
-chmod 700 ./config/
-chmod 600 ./config/* 2>/dev/null || true
+chmod 700 "${CONFIG_DIR}"
+chmod 600 "${CONFIG_DIR}"/* 2>/dev/null || true
 
 # Verify
-ls -la ./config/
+ls -la "${CONFIG_DIR}"
 ```
 
 **3. Encrypted backups:**
@@ -60,9 +62,9 @@ mv /tmp/backup-temp/*.gpg /mnt/user/backups/
 rm -rf /tmp/backup-temp/
 ```
 
-**4. Never share the `./config/` directory:**
+**4. Never share the config directory:**
 
-Anyone with access to `./config/` can use your Claude Code credentials.
+Anyone with access to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` can use your Claude Code credentials.
 
 ---
 
@@ -221,11 +223,13 @@ It is important to make explicit what this project **does not do** for security 
 ### Check what is being persisted
 
 ```bash
-# View all files in ./config/
-find ./config/ -type f | sort
+CONFIG_DIR="${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}"
+
+# View all files in the config dir
+find "${CONFIG_DIR}" -type f | sort
 
 # View permissions
-ls -laR ./config/
+ls -laR "${CONFIG_DIR}"
 ```
 
 ### Check processes inside the container
@@ -254,13 +258,13 @@ trivy image claude-code-dock_claude-code-dock
 ## Security Checklist
 
 ```
-[ ] ./config/ has permission 700 on the host
-[ ] ./config/ is in .gitignore (verify with: git check-ignore -v config/)
+[ ] CONFIG_BASE_PATH/REMOTE_SESSION_NAME/ has permission 700 on the host
+[ ] CONFIG_BASE_PATH/REMOTE_SESSION_NAME/ is in .gitignore (verify with: git check-ignore -v <path>)
 [ ] .env has permission 600
 [ ] .env is in .gitignore
 [ ] No Docker ports are exposed
 [ ] Server access is via SSH with public key
-[ ] Backups of ./config/ are stored securely
+[ ] Backups of the config directory are stored securely
 [ ] The server is not directly exposed to the internet
 [ ] VPN configured for external access (if needed)
 [ ] Container runs as node user (not root) -- verify with: docker exec claude-code-dock whoami

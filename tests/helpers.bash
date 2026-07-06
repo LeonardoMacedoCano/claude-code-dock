@@ -30,6 +30,7 @@ setup_entrypoint_env() {
   _mock_claude
   _mock_tmux
   _mock_git
+  _mock_sleep
 }
 
 _mock_claude() {
@@ -57,4 +58,17 @@ _mock_git() {
 exit 0
 EOF
   chmod +x "$MOCK_BIN/git"
+}
+
+# entrypoint.sh holds PID 1 on `sleep infinity` after a fatal config error
+# instead of exiting, so tests must stub it out — otherwise `run bash
+# entrypoint.sh` would hang forever on the fatal path. Marks that it ran via
+# a sentinel file so tests can assert the fatal path was actually reached.
+_mock_sleep() {
+  cat > "$MOCK_BIN/sleep" << EOF
+#!/bin/bash
+touch "${TEST_TMPDIR}/sleep_called"
+exit 0
+EOF
+  chmod +x "$MOCK_BIN/sleep"
 }

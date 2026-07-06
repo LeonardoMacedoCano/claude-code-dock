@@ -98,15 +98,16 @@ docker compose up -d --force-recreate
 
 ### claude-code-dock volumes
 
-The project uses two main volumes:
+The project uses three volumes:
 
 ```yaml
 volumes:
-  - ${WORKSPACE_PATH}:/workspace          # User projects
-  - ${CONFIG_PATH}:/home/node/.claude     # Claude Code credentials
+  - ${WORKSPACE_PATH}:/workspace                                     # User projects
+  - ${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}:/home/node/.claude     # Claude Code credentials (per-session)
+  - ${SHARED_CONFIG_PATH}:/home/node/.claude-shared:ro                # Optional: global CLAUDE.md/commands
 ```
 
-**Important note:** The config volume mounts to `/home/node/.claude` (not `/root/.claude`), because the container runs as the `node` user (UID 1000, non-root).
+**Important note:** The config volume mounts to `/home/node/.claude` (not `/root/.claude`), because the container runs as the `node` user (UID 1000, non-root). It must be writable by UID 1000 on the host — if `CONFIG_BASE_PATH` is unset it silently falls back to `./configs`, and Docker will auto-create that as root-owned, which the entrypoint now rejects at startup (see [Container restart loop](#container-restart-loop) below) instead of crash-looping silently.
 
 ### Inspect volumes
 
@@ -125,7 +126,7 @@ docker exec claude-code-dock ls -la /workspace/
 
 ```bash
 # Disk usage of volumes
-du -sh ./config/
+du -sh "${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
 du -sh "${WORKSPACE_PATH}"
 ```
 
@@ -137,15 +138,19 @@ du -sh "${WORKSPACE_PATH}"
 
 | Variable | Source | Description |
 |----------|--------|-------------|
-| `AUTO_START_MODE` | `.env` | Execution mode: interactive, remote, shell |
+| `AUTO_START_MODE` | `.env` | Execution mode: interactive, remote, shell — validated at startup, invalid values now fail fast instead of silently defaulting |
 | `CLAUDE_AUTO_APPROVE` | `.env` | Enables --dangerously-skip-permissions |
 | `CLAUDE_EXTRA_ARGS` | `.env` | Extra arguments for Claude |
-| `WORKSPACE_PATH` | `.env` | Workspace path on host |
+| `REMOTE_SESSION_NAME` | `.env` | Session ID — passed into the container; used for the tmux/remote session name and shown in startup logs |
 | `TZ` | `.env` | Timezone |
 | `GIT_USER_NAME` | `.env` | Name for git commits |
 | `GIT_USER_EMAIL` | `.env` | Email for git commits |
+| `GITHUB_TOKEN` | `.env` | GitHub PAT for push/pull authentication |
+| `GIT_REPO_URL` | `.env` | Repo to auto-clone into `/workspace` on first start |
 | `TERM` | `docker-compose.yml` | Terminal type |
 | `LANG` | `docker-compose.yml` | Default encoding |
+
+`WORKSPACE_PATH`, `CONFIG_BASE_PATH`, and `SHARED_CONFIG_PATH` are **not** passed into the container as environment variables — they only exist on the host, where `docker compose` uses them to resolve the `volumes:` section. Inside the container you only ever see the mounted paths (`/workspace`, `/home/node/.claude`, `/home/node/.claude-shared`).
 
 ### Inspect variables inside the container
 
@@ -251,7 +256,11 @@ docker exec claude-code-dock cat /etc/os-release
 
 ## Multiple Instances
 
-It is possible to run multiple instances for different projects:
+The recommended way to run multiple instances is `./scripts/new-session.sh`
+(one container + `.env.<name>` per project, sharing a single `CONFIG_BASE_PATH`)
+and `./scripts/sessions.sh` to list them — see [README: Scripts](../README.md#scripts).
+The manual approach below (one hand-written compose file with several
+services) still works if you'd rather not use the helper scripts:
 
 ```yaml
 # Modified docker-compose.yml for multiple projects
@@ -313,15 +322,26 @@ docker compose up -d
 
 ### Container restart loop
 
-Indicates the main process is crashing at startup. Common causes:
-1. Permission issue on the `./config` volume
-2. Corrupted configuration file
-3. Incompatible Node.js version
+As of the current entrypoint, this should no longer happen for the most
+common causes — the entrypoint validates configuration before doing
+anything else and, on a fatal problem, holds the container up (`docker ps`
+shows `Up`, not `Restarting`) instead of exiting and letting
+`restart: unless-stopped` loop it. Check the last message in the logs first:
 
 ```bash
-# Check crash logs
-docker compose logs --tail 20
+docker logs --tail 30 claude-code-dock
+```
 
+You'll see a boxed `✗ FATAL: ...` message naming the exact problem and the
+fix, typically one of:
+1. `AUTO_START_MODE` set to something other than `interactive`/`remote`/`shell` (a typo)
+2. The config or workspace directory is not writable by UID 1000 (`node`) — usually because `CONFIG_BASE_PATH`/`WORKSPACE_PATH` is unset, misspelled, or the host directory is still owned by root
+
+If the container is still actually restarting (not just holding), the crash
+is happening somewhere the validation doesn't cover yet — check the full log
+and see [Troubleshooting: Container restart loop](troubleshooting.md#container-restart-loop):
+
+```bash
 # Test without config volume (clears state)
 docker run --rm -it \
   --user node \

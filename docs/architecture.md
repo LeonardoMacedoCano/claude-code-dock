@@ -26,11 +26,11 @@ claude-code-dock implements a "persistent process in container" pattern, where C
 |  |                                                          |  |
 |  +----------------------------------------------------------+  |
 |                                                               |
-|  +--------------------+    +--------------------------------+  |
-|  |  ./config/         |    |  WORKSPACE_PATH                |  |
-|  |  (Claude           |    |  (user projects)               |  |
-|  |   credentials)     |    |  e.g. /mnt/user/projects       |  |
-|  +---------+----------+    +---------------+----------------+  |
+|  +--------------------------+    +--------------------------------+  |
+|  |  CONFIG_BASE_PATH/       |    |  WORKSPACE_PATH                |  |
+|  |  REMOTE_SESSION_NAME/    |    |  (user projects)               |  |
+|  |  (Claude credentials)    |    |  e.g. /mnt/user/projects       |  |
+|  +-------------+------------+    +---------------+----------------+  |
 |            | volume                        | volume            |
 |            v /home/node/.claude            v /workspace        |
 |  +----------------------------------------------------------+  |
@@ -68,7 +68,7 @@ The core of the system. Contains:
 
 The container runs as the `node` user (UID/GID 1000), not as `root`. This is required because Claude Code 2.x blocks `--dangerously-skip-permissions` when executed as root. The `node:lts-bookworm` base image already includes this user.
 
-### 3. Configuration Volume (`./config`)
+### 3. Configuration Volume (`CONFIG_BASE_PATH/REMOTE_SESSION_NAME`)
 
 Mapped to `/home/node/.claude` inside the container.
 
@@ -94,8 +94,11 @@ This is the working directory where the user keeps their projects. It can point 
 
 Script executed when the container starts. Responsible for:
 1. Displaying banner and variable configuration
-2. Validating dependencies
-3. Preparing environment and directories
+2. Validating dependencies (the `claude` binary)
+3. Validating configuration (`AUTO_START_MODE` value, and that the config
+   and workspace directories are writable by UID 1000) — on failure, prints
+   a fatal error and holds PID 1 instead of exiting, so `restart:
+   unless-stopped` doesn't turn it into an unreadable restart loop
 4. Configuring Git and `settings.json`
 5. Determining execution mode (interactive/remote/shell)
 6. Handing control to the process via `exec tmux new-session ...`
@@ -126,14 +129,16 @@ Docker Engine reads docker-compose.yml
         |
         v
 Docker mounts volumes:
-  ./config        -> /home/node/.claude
-  $WORKSPACE_PATH -> /workspace
+  $CONFIG_BASE_PATH/$REMOTE_SESSION_NAME -> /home/node/.claude
+  $WORKSPACE_PATH                        -> /workspace
         |
         v
 Docker runs entrypoint.sh (as user node, UID 1000)
         |
         v
-entrypoint.sh reads variables and validates environment
+entrypoint.sh reads variables and validates configuration
+(fatal + hold on sleep infinity if AUTO_START_MODE is invalid, or the
+ config/workspace directories aren't writable by UID 1000 -- see below)
         |
         v
 entrypoint.sh determines mode (interactive/remote/shell)
@@ -189,7 +194,7 @@ entrypoint.sh runs again
         |
         v
 exec tmux new-session -> Claude Code reads credentials from /home/node/.claude
-(persisted in the ./config volume)
+(persisted in the CONFIG_BASE_PATH/REMOTE_SESSION_NAME volume)
         |
         v
 Claude starts already authenticated -- no new login required
@@ -237,6 +242,20 @@ Without these flags, the Claude interface does not render and the experience deg
 
 The container runs as the `node` user (non-root). This user's home is `/home/node/`, so Claude Code stores its configuration in `/home/node/.claude/`. This is consistent with the configured user (`ENV HOME=/home/node`) and necessary for `--dangerously-skip-permissions` to work correctly.
 
+### Why does a fatal config error hold on `sleep infinity` instead of exiting?
+
+A misconfigured `AUTO_START_MODE`, or a config/workspace directory the
+`node` user can't write to (commonly because `CONFIG_BASE_PATH` was left
+unset and silently fell back to a root-owned default), used to make
+`entrypoint.sh` `exit 1`. Under `restart: unless-stopped`, that just
+restarts the container immediately, over and over — `docker ps` shows
+`Restarting`, and the terminal never holds still long enough to read why.
+Instead, `entrypoint.sh` prints the exact problem and fix, then calls `exec
+sleep infinity`, replacing itself with a process that does nothing but wait
+for a signal. The container shows as `Up`, the error stays as the last
+line in `docker logs`, and `docker stop`/`compose down` still work
+normally since `sleep` terminates on `SIGTERM` by default.
+
 ---
 
 ## Security Model
@@ -245,9 +264,10 @@ The container runs as the `node` user (non-root). This user's home is `/home/nod
 +---------------------------------------------+
 |              Boundaries                      |
 |                                             |
-|  Host filesystem                            |
-|    +-- ./config/ -------> /home/node/.claude|
-|         (credentials, mode 700)             |
+|  Host filesystem                                |
+|    +-- CONFIG_BASE_PATH/REMOTE_SESSION_NAME/    |
+|        -------------------> /home/node/.claude  |
+|         (credentials, mode 700)                 |
 |                                             |
 |    +-- WORKSPACE_PATH --> /workspace        |
 |         (user projects)                     |

@@ -12,8 +12,12 @@
 # -----------------------------------------------------------------------------
 # Configurações do Claude Code — NUNCA commitar
 # Contém credenciais de autenticação, tokens e dados sensíveis
-# O diretório config/ é montado como volume e contém ~/.claude/ do container
+# configs/<session>/ (CONFIG_BASE_PATH/REMOTE_SESSION_NAME) é montado como
+# volume e contém ~/.claude/ do container. config/ é o layout legado
+# (pre-multi-sessão) — mantido aqui para quem ainda usa o CONFIG_PATH antigo.
 # -----------------------------------------------------------------------------
+configs/*
+!configs/.gitkeep
 config/*
 !config/.gitkeep
 

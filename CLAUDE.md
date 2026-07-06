@@ -201,7 +201,8 @@ volumes:
 ```
 AUTO_START_MODE=remote      → remote mode
 AUTO_START_MODE=shell       → shell mode
-AUTO_START_MODE=interactive → interactive mode (default)
+AUTO_START_MODE=interactive → interactive mode (default; also unset)
+AUTO_START_MODE=<anything else> → fatal at startup (see validate_config in entrypoint.sh)
 ```
 
 ### Resulting commands per mode
@@ -225,8 +226,9 @@ docker compose up -d
 Docker Engine processes docker-compose.yml
     │
     ├─ Loads variables from .env
-    ├─ Mounts volume: CONFIG_PATH → /home/node/.claude
+    ├─ Mounts volume: CONFIG_BASE_PATH/REMOTE_SESSION_NAME → /home/node/.claude
     ├─ Mounts volume: WORKSPACE_PATH → /workspace
+    ├─ Mounts volume (optional, ro): SHARED_CONFIG_PATH → /home/node/.claude-shared
     └─ Starts container with ENTRYPOINT as user node
     │
     ▼
@@ -234,12 +236,14 @@ Docker Engine processes docker-compose.yml
     │
     ├─ Displays claude-code-dock banner
     ├─ Displays environment variable configuration
-    ├─ Validates: command -v claude (must exist)
+    ├─ Validates: command -v claude (must exist) — fatal() + sleep infinity if missing
     ├─ Displays version: claude --version
-    ├─ Creates directories: mkdir -p /home/node/.claude /workspace
+    ├─ validate_config(): AUTO_START_MODE is interactive/remote/shell, and
+    │  /home/node/.claude + /workspace are writable by UID 1000 — fatal()
+    │  holds PID 1 on sleep infinity instead of exiting on any failure here
     ├─ Configures Git: if GIT_USER_NAME and GIT_USER_EMAIL are set
     ├─ Persists skipDangerousModePermissionPrompt in settings.json
-    ├─ Validates /workspace: ls /workspace
+    ├─ Applies SHARED_CONFIG_PATH (CLAUDE.md merge + commands symlinks), if mounted
     ├─ Changes to: cd /workspace
     ├─ Determines mode: AUTO_START_MODE
     ├─ Builds CMD_ARGS with flags and CLAUDE_EXTRA_ARGS
@@ -310,16 +314,18 @@ tmux new-session -s main claude --dangerously-skip-permissions
 
 **Development rules:**
 1. Must end with `exec tmux new-session -s main <CMD_BIN> [CMD_ARGS...]` (or `exec bash` in shell mode)
-2. Do not use `tail -f /dev/null` or infinite loops
-3. Validations must be non-destructive (warn but don't block, except for critical errors)
+2. Do not use `tail -f /dev/null` or infinite loops as a stand-in for real startup logic. The one sanctioned exception is `fatal()`'s `exec sleep infinity`: on an unrecoverable misconfiguration (invalid `AUTO_START_MODE`, unwritable config/workspace dir, missing `claude` binary), holding PID 1 there — instead of `exit 1` — keeps the container `Up` under `restart: unless-stopped` rather than restart-looping, so the error stays visible in `docker logs`. `sleep` still terminates immediately on `SIGTERM` (no trap installed), so `docker stop`/`compose down` behave normally.
+3. Non-fatal validations stay non-destructive (warn but don't block); anything `fatal()` covers is intentionally blocking by design
 4. Display useful messages to the user during initialization
 5. Use `set -e` to fail fast on critical errors
 6. Respect `AUTO_START_MODE` and `CLAUDE_EXTRA_ARGS`
+7. New mandatory-config checks belong in `validate_config()`, called right after the `claude` binary check and before any mutation (symlinks, git config, settings.json) — fail via `fatal()`, not a bare `exit`
 
 **Required flow:**
 ```
-banner → show config → validate claude → create dirs → configure git
-→ settings.json → validate workspace → cd /workspace → determine mode
+banner → show config → validate claude → validate_config (mode + writable
+config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
+→ configure git → settings.json → cd /workspace → determine mode
 → build CMD_ARGS → show info → exec tmux new-session -s main <CMD_BIN> [CMD_ARGS...]
 ```
 
@@ -363,7 +369,7 @@ banner → show config → validate claude → create dirs → configure git
 **Responsibility:** Create a backup of persisted configurations.
 
 **What is backed up:**
-- `./config/` (Claude Code credentials) — always included
+- `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (Claude Code credentials) — always included
 - `./workspaces/` (local workspace) — included if not empty
 - External workspace — only with `--include-workspace`
 
@@ -442,8 +448,8 @@ Set `AUTO_START_MODE=remote` in `.env`.
 ### Environment Variables
 
 - `WORKSPACE_PATH`: path to the workspace on the host
-- `CONFIG_PATH`: path to credentials on the host
-- `AUTO_START_MODE`: execution mode (interactive/remote/shell)
+- `CONFIG_BASE_PATH` / `REMOTE_SESSION_NAME`: base dir + session ID; credentials live at `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` on the host
+- `AUTO_START_MODE`: execution mode (interactive/remote/shell) — validated at container startup by `validate_config()` in `entrypoint.sh`
 - `CLAUDE_AUTO_APPROVE`: enables --dangerously-skip-permissions
 - `CLAUDE_EXTRA_ARGS`: extra arguments for claude
 - `TZ`: timezone
@@ -483,7 +489,7 @@ Claude Code's login process is an official Anthropic authentication flow. Automa
 - Would create a dependency on internal behavior that may change
 - Would be fundamentally unsustainable
 
-The correct solution is to persist the credentials that Claude Code itself saves after manual authentication. The user logs in once, and the `CONFIG_PATH` volume preserves those credentials.
+The correct solution is to persist the credentials that Claude Code itself saves after manual authentication. The user logs in once, and the `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` volume preserves those credentials.
 
 ### 2. Why non-root user (`node`, UID 1000)?
 
@@ -491,9 +497,9 @@ Claude Code 2.x blocks `--dangerously-skip-permissions` when running as root. Ad
 
 ### 3. Why bind mounts instead of named Docker volumes?
 
-Bind mounts (`./config:/home/node/.claude`) have clear advantages:
-- Direct visibility: the user can see files in `./config/`
-- Simple backup: `tar -czf backup.tar.gz ./config/`
+Bind mounts (`CONFIG_BASE_PATH/REMOTE_SESSION_NAME:/home/node/.claude`) have clear advantages:
+- Direct visibility: the user can see files in that host directory
+- Simple backup: `tar -czf backup.tar.gz <CONFIG_BASE_PATH>/<REMOTE_SESSION_NAME>/`
 - Portability: moving the entire project preserves everything
 - No special commands needed to access
 
@@ -530,13 +536,13 @@ Allows customization without modifying the entrypoint. The user can add `--model
 
 ```
 Host filesystem:
-┌────────────────────────────────────────────────────────┐
-│  ./config/                    $WORKSPACE_PATH           │
-│  ┌──────────────────┐         ┌──────────────────────┐  │
-│  │ settings.json    │         │ my-project/          │  │
-│  │ (credentials)    │         │ another-project/     │  │
-│  └────────┬─────────┘         └──────────┬───────────┘  │
-└───────────┼────────────────────────────┼───────────────┘
+┌───────────────────────────────────────────────────────────┐
+│  $CONFIG_BASE_PATH/$REMOTE_SESSION_NAME/  $WORKSPACE_PATH  │
+│  ┌──────────────────┐         ┌──────────────────────┐    │
+│  │ settings.json    │         │ my-project/          │    │
+│  │ (credentials)    │         │ another-project/     │    │
+│  └────────┬─────────┘         └──────────┬───────────┘    │
+└───────────┼────────────────────────────┼──────────────────┘
             │ bind mount                  │ bind mount
             ▼                             ▼
 Container filesystem (user node):
@@ -553,15 +559,15 @@ Container filesystem (user node):
 
 ```
 First use:
-  - ./config/ is empty
+  - CONFIG_BASE_PATH/REMOTE_SESSION_NAME/ is empty
   - User connects and logs in
   - Claude Code saves credentials to /home/node/.claude/
-  - /home/node/.claude/ is ./config/ (bind mount)
-  - ./config/ now has credentials
+  - /home/node/.claude/ is CONFIG_BASE_PATH/REMOTE_SESSION_NAME/ (bind mount)
+  - CONFIG_BASE_PATH/REMOTE_SESSION_NAME/ now has credentials
 
 Container restarts:
-  - ./config/ still has credentials (they stayed on the host)
-  - New container mounts ./config/ at /home/node/.claude/
+  - CONFIG_BASE_PATH/REMOTE_SESSION_NAME/ still has credentials (they stayed on the host)
+  - New container mounts it at /home/node/.claude/
   - Claude Code reads credentials → already authenticated
   - User does not need to log in again
 ```
@@ -580,7 +586,7 @@ When the user connects for the first time:
 3. Claude Code displays the authentication prompt
 4. User follows the official authentication flow
 5. Claude Code saves credentials to `/home/node/.claude/`
-6. Since `/home/node/.claude/` is a bind mount of `./config/`, credentials stay on the host
+6. Since `/home/node/.claude/` is a bind mount of `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/`, credentials stay on the host
 
 ---
 
@@ -591,7 +597,7 @@ When the user connects for the first time:
 1. **No authentication interception:** The project does not read, modify, or intercept credentials.
 2. **No login automation:** All authentication is performed by the user with Claude Code.
 3. **No exposed ports:** The container does not listen on any network port.
-4. **Isolated credentials:** `./config/` excluded from git via `.gitignore`.
+4. **Isolated credentials:** `configs/` (and the legacy `config/`) excluded from git via `.gitignore`.
 5. **Non-root user:** Container runs as `node` (UID 1000).
 6. **Full transparency:** All code is open source and auditable.
 

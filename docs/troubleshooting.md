@@ -45,15 +45,18 @@ docker logs claude-code-dock
 
 **Causes and solutions:**
 
-**A) Permission error on the `./config` volume:**
-```
-Error: EACCES: permission denied, open '/home/node/.claude/...'
-```
+**A) Permission error on the config volume:**
+
+The entrypoint validates this on every start and now fails with a boxed,
+explicit message instead of a bare `EACCES` — look for `✗ FATAL: Config
+directory is not writable` in the logs. Fix:
 ```bash
-# Fix permissions (UID 1000 = node user)
-chown -R 1000:1000 ./config/
-chmod -R 700 ./config/
+# Fix permissions (UID 1000 = node user) on CONFIG_BASE_PATH/REMOTE_SESSION_NAME
+chown -R 1000:1000 <your CONFIG_BASE_PATH>/<REMOTE_SESSION_NAME>
 ```
+Also confirm `CONFIG_BASE_PATH` is actually set in `.env` — if empty, it
+silently falls back to `./configs` (relative to wherever `docker compose`
+runs from), which Docker then creates owned by root.
 
 **B) WORKSPACE_PATH does not exist:**
 ```
@@ -87,7 +90,7 @@ docker logs claude-code-dock
 
 **Cause A — Claude Code not found in the image:**
 ```
-[x] Claude Code not found in PATH.
+✗ FATAL: Claude Code binary missing
 ```
 ```bash
 # Rebuild image without cache
@@ -116,13 +119,32 @@ NAME          STATUS
 claude-code-dock   Restarting (1) 3 seconds ago
 ```
 
+The entrypoint validates configuration (execution mode, and that the config
+and workspace directories are actually writable by UID 1000) before doing
+anything else. On a fatal problem it now prints a boxed `✗ FATAL: ...`
+message naming the exact cause and the fix, then holds PID 1 on `sleep
+infinity` instead of exiting — so the container shows as `Up` (not
+`Restarting`) and the message stays put in `docker logs` instead of
+scrolling away in an endless loop.
+
 **Diagnosis:**
 ```bash
-# View loop logs
-docker logs --tail 20 claude-code-dock
+docker logs --tail 30 claude-code-dock
 ```
 
-**Diagnostic solution — start with shell:**
+If you see a `✗ FATAL` block, it already tells you the fix — usually one of:
+1. `AUTO_START_MODE` set to something other than `interactive`/`remote`/`shell`
+2. `CONFIG_BASE_PATH` unset/misspelled, or the resolved directory on the host is not owned by UID 1000
+3. `WORKSPACE_PATH` unset/misspelled, or not owned by UID 1000
+
+After fixing `.env` or host permissions:
+```bash
+docker compose up -d --force-recreate
+```
+
+**If the container is genuinely still restarting** (not holding on a FATAL
+message), the crash is happening somewhere validation doesn't cover —
+investigate with a shell instead:
 ```bash
 # Temporarily change AUTO_START_MODE to shell in .env
 # AUTO_START_MODE=shell
@@ -137,7 +159,7 @@ Or start without entrypoint:
 docker run --rm -it \
   --user node \
   --entrypoint /bin/bash \
-  -v "$(pwd)/config:/home/node/.claude" \
+  -v "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}:/home/node/.claude" \
   -v "${WORKSPACE_PATH:-$(pwd)/workspaces}:/workspace" \
   claude-code-dock_claude-code-dock
 ```
@@ -255,12 +277,12 @@ or the Unraid container Console instead.
 
 ### Claude Code asks for login every time the container restarts
 
-**Cause:** The `./config` volume is not being mounted correctly, or credentials are not being persisted.
+**Cause:** The config volume is not being mounted correctly, `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` changed between restarts, or credentials are not being persisted.
 
 **Diagnosis:**
 ```bash
-# Check if ./config has content
-ls -la ./config/
+# Check if the session's config dir has content
+ls -la "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}/"
 
 # Check if the volume is mounted correctly
 docker inspect claude-code-dock | jq '.[0].Mounts'
@@ -271,7 +293,7 @@ docker exec claude-code-dock ls -la /home/node/.claude/
 
 **Solutions:**
 
-**A) `./config` directory empty after login:**
+**A) Config directory empty after login:**
 Claude Code may have saved credentials in a different location. Check:
 ```bash
 # After logging in, check where credentials were saved
@@ -279,23 +301,23 @@ docker exec claude-code-dock find /home/node -name "*.json" 2>/dev/null
 docker exec claude-code-dock find /home/node -name "credentials*" 2>/dev/null
 ```
 
-**B) Incorrect permission on `./config` directory:**
+**B) Incorrect permission on the config directory:**
 ```bash
 # Check permissions (must be accessible to UID 1000)
-ls -la ./config/
+ls -la "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}/"
 
 # Fix
-chown -R 1000:1000 ./config/
-chmod 700 ./config/
+chown -R 1000:1000 "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}/"
+chmod 700 "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}/"
 ```
 
-**C) Volume not appearing in `docker inspect`:**
+**C) Volume not appearing in `docker inspect`, or `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` changed:**
 ```bash
-# The .env may not be loading
+# The .env may not be loading, or these vars are unset/misspelled
 cat .env
 
-# Check CONFIG_PATH in .env
-grep CONFIG_PATH .env
+# Confirm both are set
+grep -E "^(CONFIG_BASE_PATH|REMOTE_SESSION_NAME)=" .env
 
 # Force container recreation with new settings
 docker compose down
@@ -306,15 +328,17 @@ docker compose up -d
 
 ### "Authentication failed" or "Invalid token"
 
-**Cause:** Credentials saved in `./config` may be corrupted or expired.
+**Cause:** Credentials saved in the config directory may be corrupted or expired.
 
 **Solution:**
 ```bash
+CONFIG_DIR="${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}"
+
 # 1. Back up current credentials
-cp -r ./config/ ./config_backup_$(date +%Y%m%d)/
+cp -r "${CONFIG_DIR}/" "${CONFIG_DIR}_backup_$(date +%Y%m%d)/"
 
 # 2. Clear credentials
-rm -rf ./config/*
+rm -rf "${CONFIG_DIR}"/*
 
 # 3. Restart the container
 docker compose restart

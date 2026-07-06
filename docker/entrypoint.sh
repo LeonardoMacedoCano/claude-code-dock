@@ -56,6 +56,74 @@ log_warn()  { echo -e "  ${YELLOW}⚠${RESET} $1"; log_write "WARN"  "$1"; }
 log_error() { echo -e "  ${RED}✗${RESET} $1"; log_write "ERROR" "$1"; }
 log_step()  { echo -e "  ${CYAN}→${RESET} $1"; log_write "STEP"  "$1"; }
 
+# Stops startup on unrecoverable misconfiguration. Deliberately does NOT
+# `exit` — under `restart: unless-stopped`, exiting here just restarts the
+# container in an endless loop that clears the terminal before the message
+# can be read. Holding PID 1 on `sleep infinity` keeps the container "Up"
+# (not "Restarting") with this error as the last thing in `docker logs`.
+fatal() {
+    local title="$1"
+    local reason="$2"
+    local fix="$3"
+
+    echo ""
+    echo -e "  ${RED}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "  ${RED}${BOLD}✗ FATAL: ${title}${RESET}"
+    echo -e "  ${RED}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo ""
+    echo -e "  ${reason}"
+    echo ""
+    echo -e "  ${BOLD}How to fix:${RESET}"
+    echo -e "${fix}"
+    echo ""
+    echo -e "  The container stays up instead of restart-looping, so this message"
+    echo -e "  stays visible in ${BOLD}docker logs${RESET}. After fixing it, run:"
+    echo -e "    ${BOLD}docker compose up -d --force-recreate${RESET}"
+    echo ""
+    echo -e "  ${RED}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo ""
+
+    log_write "FATAL" "${title}: ${reason}"
+
+    exec sleep infinity
+}
+
+# Fails fast on misconfiguration that would otherwise surface as a silent,
+# hard-to-diagnose restart loop: an unrecognized AUTO_START_MODE (a typo
+# quietly falls through to interactive today, unnoticed) or a mounted
+# directory the 'node' user (UID 1000) cannot write to (the #1 cause of
+# crash loops — usually a bind-mounted host path owned by root because
+# CONFIG_BASE_PATH/WORKSPACE_PATH was unset, misspelled, or never chown'd).
+validate_config() {
+    log_step "Validating configuration..."
+
+    local mode="${AUTO_START_MODE:-interactive}"
+    case "${mode}" in
+        interactive|remote|shell) ;;
+        *)
+            fatal "Invalid AUTO_START_MODE" \
+                "AUTO_START_MODE=\"${mode}\" is not a recognized execution mode." \
+                "    Set AUTO_START_MODE to one of ${BOLD}interactive${RESET}, ${BOLD}remote${RESET}, ${BOLD}shell${RESET} in .env."
+            ;;
+    esac
+
+    if ! mkdir -p "${HOME}/.claude" 2>/dev/null || \
+       ! ( touch "${HOME}/.claude/.write_test" 2>/dev/null && rm -f "${HOME}/.claude/.write_test" 2>/dev/null ); then
+        fatal "Config directory is not writable" \
+            "/home/node/.claude (bind-mounted from CONFIG_BASE_PATH/REMOTE_SESSION_NAME on the host) cannot be written by UID 1000 (user 'node')." \
+            "    On the host, fix ownership of the directory:\n    ${BOLD}chown -R 1000:1000 <your CONFIG_BASE_PATH>/${REMOTE_SESSION_NAME:-<session>}${RESET}\n\n    Also confirm CONFIG_BASE_PATH is actually set in .env — when it is empty it\n    silently falls back to ./configs, which Docker then creates owned by root."
+    fi
+
+    if ! mkdir -p "${WORKSPACE_DIR:-/workspace}" 2>/dev/null || \
+       ! ( touch "${WORKSPACE_DIR:-/workspace}/.write_test" 2>/dev/null && rm -f "${WORKSPACE_DIR:-/workspace}/.write_test" 2>/dev/null ); then
+        fatal "Workspace directory is not writable" \
+            "${WORKSPACE_DIR:-/workspace} (bind-mounted from WORKSPACE_PATH on the host) cannot be written by UID 1000 (user 'node')." \
+            "    On the host, fix ownership of the directory:\n    ${BOLD}chown -R 1000:1000 <your WORKSPACE_PATH>${RESET}"
+    fi
+
+    log_info "Configuration OK: mode=${mode}, config dir writable, workspace writable."
+}
+
 log_write "STEP" "──── container start ────"
 
 print_banner
@@ -79,17 +147,15 @@ echo ""
 log_step "Checking Claude Code installation..."
 
 if ! command -v claude &>/dev/null; then
-    log_error "Claude Code not found in PATH."
-    log_error "Rebuild the image: docker compose build --no-cache"
-    exit 1
+    fatal "Claude Code binary missing" \
+        "The 'claude' CLI was not found in PATH. The image may be corrupted, or the build did not finish." \
+        "    ${BOLD}docker compose build --no-cache${RESET}\n    ${BOLD}docker compose up -d${RESET}"
 fi
 
 CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "unknown version")
 log_info "Claude Code: ${BOLD}${CLAUDE_VERSION}${RESET}"
 
-log_step "Preparing environment..."
-mkdir -p "${HOME}/.claude" "${WORKSPACE_DIR:-/workspace}"
-log_info "Directories verified."
+validate_config
 
 # ~/.claude.json lives outside the mounted volume and would be lost on restart.
 # Symlinking it into the volume keeps credentials persistent across container restarts.
@@ -204,14 +270,9 @@ if [ -d "${SHARED_DIR}/commands" ]; then
     fi
 fi
 
-log_step "Validating workspace..."
-
-if [ -d "${WORKSPACE_DIR:-/workspace}" ] && [ -r "${WORKSPACE_DIR:-/workspace}" ]; then
-    WORKSPACE_FILES=$(ls "${WORKSPACE_DIR:-/workspace}" 2>/dev/null | wc -l)
-    log_info "Workspace: /workspace (${WORKSPACE_FILES} item(s))"
-else
-    log_warn "/workspace not accessible. Check WORKSPACE_PATH in .env"
-fi
+log_step "Workspace summary..."
+WORKSPACE_FILES=$(ls "${WORKSPACE_DIR:-/workspace}" 2>/dev/null | wc -l)
+log_info "Workspace: /workspace (${WORKSPACE_FILES} item(s))"
 
 cd "${WORKSPACE_DIR:-/workspace}"
 

@@ -71,11 +71,13 @@ teardown() {
   [ ! -f "$TEST_TMPDIR/tmux_args" ]
 }
 
-@test "unknown mode falls back to interactive (tmux + claude)" {
+@test "unknown mode is rejected with a fatal error instead of silently starting" {
   export AUTO_START_MODE="nonexistent"
   run bash "$ENTRYPOINT"
-  [ "$status" -eq 0 ]
-  grep -q "^claude$" "$TEST_TMPDIR/tmux_args"
+  [ -f "$TEST_TMPDIR/sleep_called" ]
+  [ ! -f "$TEST_TMPDIR/tmux_args" ]
+  [[ "$output" == *"FATAL"* ]]
+  [[ "$output" == *"AUTO_START_MODE"* ]]
 }
 
 @test "CLAUDE_EXTRA_ARGS are appended to the command" {

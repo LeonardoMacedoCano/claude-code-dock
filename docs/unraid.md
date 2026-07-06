@@ -25,7 +25,8 @@ Recommended structure on Unraid:
     +-- Dockerfile
     +-- docker-compose.yml
     +-- .env
-    +-- config/                    <- Claude Code credentials
+    +-- configs/                   <- Claude Code credentials (CONFIG_BASE_PATH)
+        +-- <session>/             <- one subfolder per REMOTE_SESSION_NAME
 
 /mnt/cache/projects/               <- workspace (SSD = fast)
     +-- my-project-1/
@@ -114,8 +115,13 @@ CLAUDE_DOCK_VERSION=main
 # Workspace on SSD cache (faster than the HDD array)
 WORKSPACE_PATH=/mnt/cache/projects
 
-# Claude Code credentials
-CONFIG_PATH=/mnt/user/appdata/claude-code-dock/config
+# Base directory for per-session config subdirectories.
+# Credentials for THIS container end up at CONFIG_BASE_PATH/REMOTE_SESSION_NAME.
+CONFIG_BASE_PATH=/mnt/user/appdata/claude-code-dock/configs
+
+# Required. Isolates this container's credentials from any other instance —
+# two containers must never share the same REMOTE_SESSION_NAME.
+REMOTE_SESSION_NAME=my-session
 
 # Execution mode
 AUTO_START_MODE=interactive
@@ -130,6 +136,24 @@ TZ=America/New_York
 GIT_USER_NAME=Your Name
 GIT_USER_EMAIL=your@email.com
 ```
+
+> **Coming from an older setup with a flat `CONFIG_PATH`?** That variable was
+> replaced by `CONFIG_BASE_PATH` + `REMOTE_SESSION_NAME` so multiple
+> containers can safely share one credentials root. Migrate existing
+> credentials into the new per-session layout:
+> ```bash
+> mkdir -p /mnt/user/appdata/claude-code-dock/configs
+> mv /mnt/user/appdata/claude-code-dock/config \
+>    /mnt/user/appdata/claude-code-dock/configs/my-session
+> chown -R 1000:1000 /mnt/user/appdata/claude-code-dock/configs
+> ```
+> If `CONFIG_BASE_PATH` is left unset, it silently falls back to `./configs`
+> (relative to wherever `docker compose` runs from) — a common source of the
+> container restarting without ever showing readable logs, since Docker then
+> creates that directory owned by root, which UID 1000 (`node`) cannot write
+> to. As of the current entrypoint, this now fails fast with a clear
+> `chown` instruction printed to `docker logs` instead of looping silently —
+> see [troubleshooting.md](troubleshooting.md#container-restart-loop).
 
 ### 1.5 — Create the workspace directory
 
@@ -315,8 +339,9 @@ docker exec -it claude-code-dock bash
 |       +-- docker-compose.yml
 |       +-- Dockerfile
 |       +-- .env
-|       +-- config/                   <- Claude Code credentials
-|       |   +-- settings.json        (created after login)
+|       +-- configs/                  <- CONFIG_BASE_PATH
+|       |   +-- <session>/            <- REMOTE_SESSION_NAME, one per container
+|       |       +-- settings.json    (created after login)
 |       +-- docker/
 |       |   +-- entrypoint.sh
 |       +-- scripts/
@@ -359,7 +384,7 @@ cd /mnt/user/appdata/claude-code-dock
 
 ### Via CA Appdata Backup/Restore
 
-The **CA Appdata Backup/Restore** plugin can automatically back up the entire `appdata` folder, including `claude-code-dock/config`.
+The **CA Appdata Backup/Restore** plugin can automatically back up the entire `appdata` folder, including `claude-code-dock/configs`.
 
 Configure the plugin to include:
 ```
