@@ -17,6 +17,7 @@ ERRORS=0
 SHELL_FILES=(
   "$PROJECT_DIR/docker/entrypoint.sh"
   "$PROJECT_DIR/docker/claude-console.sh"
+  "$PROJECT_DIR/docker/claude-remote-launch.sh"
   "$PROJECT_DIR/scripts/install.sh"
   "$PROJECT_DIR/scripts/new-session.sh"
   "$PROJECT_DIR/scripts/session-up.sh"

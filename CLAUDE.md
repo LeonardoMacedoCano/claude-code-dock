@@ -29,7 +29,7 @@ These rules apply whenever the user asks Claude Code to perform any GitHub or Gi
 
 ### 1. Always verify Git configuration before acting
 
-Before executing any GitHub-related task, check whether the following variables are set in `.env`:
+Before executing any GitHub-related task, verify that the following are actually usable:
 
 | Variable | Required for |
 |----------|-------------|
@@ -38,16 +38,30 @@ Before executing any GitHub-related task, check whether the following variables 
 | `GITHUB_TOKEN` | Push, pull from private repos, any authenticated operation |
 | `GIT_REPO_URL` | Auto-clone on startup |
 
-**If any required variable is missing or empty**, stop and inform the user. Do not proceed with the operation. Explain which variable is missing and how to configure it:
+**A literal `.env` file is not the only valid source and must not be treated as the source of truth.** These variables can just as validly arrive as real process environment variables — exported by the shell that ran `docker compose up`, injected via `environment:`/`env_file:` in `docker-compose.yml`, or passed with `docker run -e`. Checking only `test -f .env` / `grep .env` gives false negatives (see incident: a user had configured everything via process env vars with no `.env` file on disk at all; concluding "not configured" from the missing file alone was wrong).
+
+**Correct way to check — in this order, and only using presence tests, never printing values:**
+1. Process environment, presence only: `[ -n "${GIT_USER_NAME:-}" ]`, `[ -n "${GIT_USER_EMAIL:-}" ]`, `[ -n "${GITHUB_TOKEN:-}" ]`, `[ -n "${GIT_REPO_URL:-}" ]`.
+2. Effect already applied by `entrypoint.sh`, which is safe to print because it's not secret: `git config --global user.name`, `git config --global user.email`.
+3. Whether the token was actually installed, existence only, never contents: `test -f ~/.git-credentials`.
+4. Only if none of the above resolve it, fall back to checking a `.env` file on disk — and even then, test for the key's presence (`grep -q '^GITHUB_TOKEN=.\+' .env`), don't `cat`/print the file.
+
+**Never do any of the following, even just to "double-check" a value is set:**
+- `echo "$GITHUB_TOKEN"`, `printenv GITHUB_TOKEN`, `cat ~/.git-credentials`, or any command whose output could include the token itself.
+- A shell one-liner that looks like it redacts a secret but doesn't in every branch. Example of what actually leaked a live token once: `` echo "${GITHUB_TOKEN:+<set, redacted>}${GITHUB_TOKEN:-<unset>}" `` — the second expansion (`:-`) still substitutes the *real value* whenever the variable is set and non-empty, because `:-` only falls back on unset/empty. If you need to show "is this set?", use a boolean test (`[ -n "$VAR" ] && echo set || echo unset`) and never interpolate the secret's own expansion into the string, redacted-looking or not.
+- Piping/grepping a file that might contain the token (`.env`, `~/.git-credentials`) through anything that echoes matched lines, unless the pattern only matches the variable *name*, not its value.
+
+**If any required variable is missing or empty** (confirmed via the safe checks above), stop and inform the user. Do not proceed with the operation. Explain which variable is missing and how to configure it — as an env var or in `.env`, whichever the user is already using:
 
 ```
-The variable GITHUB_TOKEN is not set in your .env file.
+GITHUB_TOKEN is not set (checked: process environment, git config, ~/.git-credentials, .env).
 Without it, git push/pull to GitHub will fail.
 
 To configure it:
 1. Go to https://github.com/settings/tokens → "Generate new token (classic)"
 2. Name it (e.g. claude-code-dock), select scope "repo", generate and copy
-3. Open your .env file and add:
+3. Set it either as an environment variable for the container, or add it to
+   your .env file:
    GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 4. Restart the container: docker compose restart
 ```
@@ -55,10 +69,10 @@ To configure it:
 Apply the same pattern for `GIT_USER_NAME` and `GIT_USER_EMAIL`:
 
 ```
-The variables GIT_USER_NAME and GIT_USER_EMAIL are not set in your .env file.
+GIT_USER_NAME / GIT_USER_EMAIL are not set (checked: process environment, git config, .env).
 Without them, git commits will have no author identity.
 
-To configure them, open your .env file and add:
+Set them either as environment variables for the container, or in your .env file:
    GIT_USER_NAME=Your Name
    GIT_USER_EMAIL=your@email.com
 
@@ -87,14 +101,16 @@ git remote set-url origin https://github.com/USER/REPO.git
 
 ### 3. Checklist before any GitHub operation
 
+Check via the safe methods in section 1 — process env presence test, `git config --global`, `test -f ~/.git-credentials` — not by printing or catting anything:
+
 ```
-[ ] GIT_USER_NAME set in .env?
-[ ] GIT_USER_EMAIL set in .env?
-[ ] GITHUB_TOKEN set in .env? (required for push/pull)
+[ ] GIT_USER_NAME resolvable (env var or git config --global user.name)?
+[ ] GIT_USER_EMAIL resolvable (env var or git config --global user.email)?
+[ ] GITHUB_TOKEN present (env var set, or ~/.git-credentials exists) — required for push/pull?
 [ ] Remote URL is HTTPS (not SSH)?
 ```
 
-If any item is missing, inform the user and pause. Never silently skip a check or attempt to work around a missing credential.
+If any item is missing, inform the user and pause. Never silently skip a check or attempt to work around a missing credential. Never print or echo the value of `GITHUB_TOKEN` (or any file that contains it) while performing this checklist.
 
 ---
 
@@ -210,9 +226,19 @@ AUTO_START_MODE=<anything else> → fatal at startup (see validate_config in ent
 
 ```
 interactive: claude [--dangerously-skip-permissions] [CLAUDE_EXTRA_ARGS]
-remote:      claude --remote-control [CLAUDE_EXTRA_ARGS]
+remote:      claude [--dangerously-skip-permissions] --remote-control [REMOTE_SESSION_NAME] [CLAUDE_EXTRA_ARGS]
+             (via docker/claude-remote-launch.sh — see below)
 shell:       bash
 ```
+
+Remote mode does not exec `claude` directly. `entrypoint.sh` hands the args above
+to `docker/claude-remote-launch.sh`, which decides at runtime whether to add
+`--continue`: it only tries it when this workspace already has a recorded
+conversation (`~/.claude/projects/<encoded-cwd>/*.jsonl`), and if that attempt
+fails within 15s (nothing actually resumable), it retries once without
+`--continue` instead of leaving the tmux pane dead. A failure after running
+longer than that is treated as a real crash and left to propagate, so Docker's
+`restart: unless-stopped` handles it. See "File Responsibilities" below.
 
 ---
 
@@ -319,7 +345,7 @@ tmux new-session -s main claude --dangerously-skip-permissions
 **Responsibility:** Initialize the environment and transfer control to the correct process.
 
 **Development rules:**
-1. Must end with `exec tmux new-session -s main <CMD_BIN> [CMD_ARGS...]` (or `exec bash` in shell mode)
+1. Must end with `exec tmux new-session -s main <LAUNCH_BIN> [CMD_ARGS...]` (or `exec bash` in shell mode). `LAUNCH_BIN` equals `CMD_BIN` (`claude`) in interactive mode; in remote mode it points to `docker/claude-remote-launch.sh` instead, so `--continue` retry logic can run before `claude` is actually exec'd. `CMD_ARGS` never contains `--continue` — that flag is decided at runtime by the wrapper, not built here.
 2. Do not use `tail -f /dev/null` or infinite loops as a stand-in for real startup logic. The one sanctioned exception is `fatal()`'s `exec sleep infinity`: on an unrecoverable misconfiguration (invalid `AUTO_START_MODE`, unwritable config/workspace dir, missing `claude` binary), holding PID 1 there — instead of `exit 1` — keeps the container `Up` under `restart: unless-stopped` rather than restart-looping, so the error stays visible in `docker logs`. `sleep` still terminates immediately on `SIGTERM` (no trap installed), so `docker stop`/`compose down` behave normally.
 3. Non-fatal validations stay non-destructive (warn but don't block); anything `fatal()` covers is intentionally blocking by design
 4. Display useful messages to the user during initialization
@@ -332,8 +358,27 @@ tmux new-session -s main claude --dangerously-skip-permissions
 banner → show config → validate claude → validate_config (mode + writable
 config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 → configure git → settings.json → cd /workspace → determine mode
-→ build CMD_ARGS → show info → exec tmux new-session -s main <CMD_BIN> [CMD_ARGS...]
+→ build CMD_ARGS → show info → exec tmux new-session -s main <LAUNCH_BIN> [CMD_ARGS...]
 ```
+
+---
+
+### `docker/claude-remote-launch.sh`
+
+**Responsibility:** Decide, at container startup and only in remote mode, whether `claude --remote-control` should try `--continue` — and recover if that guess was wrong.
+
+**Why this exists:** `claude --continue` hard-fails when the current workspace has no resumable conversation, with no built-in fallback. A brand-new `REMOTE_SESSION_NAME` always starts with an empty `~/.claude/projects/` — adding `--continue` unconditionally in `entrypoint.sh` killed the tmux pane on first boot for every new session name. See git history for the incident this fixed.
+
+**Logic:**
+1. Check whether `~/.claude/projects/<encoded-cwd>/*.jsonl` exists (`encoded-cwd` = `pwd` with `/` replaced by `-`, matching Claude Code's own project-dir naming).
+2. If it does, run `claude "$@" --continue`. If that exits `0`, done.
+3. If it exits non-zero within `FAST_FAIL_THRESHOLD` (15s) — treated as "nothing was actually resumable" — retry once without `--continue`.
+4. If it exits non-zero after running longer than that, treat it as a real crash and propagate the exit code as-is (do not retry) so Docker's `restart: unless-stopped` handles it normally, instead of masking a genuine crash as a fresh, non-continued session.
+5. If no history file exists at all, skip straight to `exec claude "$@"` — no wasted `--continue` attempt.
+
+**Must not:**
+- Use `set -e` (the script needs `claude`'s exit code after it fails, which errexit would prevent it from inspecting)
+- Assume the presence of a `.jsonl` file guarantees `--continue` will succeed — it's a hint, checked defensively via the fast-fail retry, not a guarantee
 
 ---
 

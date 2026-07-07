@@ -320,7 +320,11 @@ case "${MODE}" in
         # most recent /workspace conversation instead of registering a brand
         # new one — without it, every container restart piles up another
         # dead entry with the same name in the claude.ai/code session list.
-        CMD_ARGS+=("--continue")
+        # It can't be added unconditionally here: it hard-fails when this
+        # workspace has no resumable conversation yet (e.g. a brand new
+        # REMOTE_SESSION_NAME), which killed the tmux pane on first boot.
+        # claude-remote-launch.sh below decides at runtime whether to try it
+        # and falls back automatically if it fails immediately.
         if [ -n "${REMOTE_SESSION_NAME:-}" ]; then
             CMD_ARGS+=("--remote-control" "${REMOTE_SESSION_NAME}")
         else
@@ -348,6 +352,15 @@ else
     DISPLAY_CMD="${CMD_BIN}"
 fi
 
+# Remote mode routes through claude-remote-launch.sh instead of exec'ing
+# claude directly, so it can try --continue and fall back without --continue
+# if there's nothing resumable. DISPLAY_CMD above intentionally still shows
+# the plain "claude ..." invocation — that's what actually ends up running.
+LAUNCH_BIN="${CMD_BIN}"
+if [ "${MODE}" = "remote" ]; then
+    LAUNCH_BIN="/usr/local/bin/claude-remote-launch.sh"
+fi
+
 echo ""
 echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
@@ -357,6 +370,8 @@ case "${MODE}" in
         echo -e "  ${BOLD}Execution mode:${RESET} ${GREEN}remote control${RESET}"
         echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-code-dock tmux attach-session -t main${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}Ctrl+B${RESET} then ${CYAN}D${RESET}"
+        echo -e "  ${BOLD}Resume:${RESET}         auto-continues the last conversation in /workspace if one exists;"
+        echo -e "                     starts fresh automatically if there's nothing resumable"
         ;;
     shell)
         echo -e "  ${BOLD}Execution mode:${RESET} ${YELLOW}shell (bash)${RESET}"
@@ -383,5 +398,5 @@ echo ""
 if [ "${MODE}" = "shell" ]; then
     exec "${CMD_BIN}" "${CMD_ARGS[@]}"
 else
-    exec tmux new-session -s main "${CMD_BIN}" "${CMD_ARGS[@]}"
+    exec tmux new-session -s main "${LAUNCH_BIN}" "${CMD_ARGS[@]}"
 fi

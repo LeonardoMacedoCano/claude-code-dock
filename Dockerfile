@@ -64,6 +64,9 @@ WORKDIR /workspace
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 # claude-console: used by Unraid Console (Shell field = claude-console)
 COPY --chmod=755 docker/claude-console.sh /usr/bin/claude-console
+# claude-remote-launch: internal helper invoked by entrypoint.sh in remote
+# mode only, to try --continue and fall back safely if it isn't resumable.
+COPY --chmod=755 docker/claude-remote-launch.sh /usr/local/bin/claude-remote-launch.sh
 
 # Claude Code 2.x blocks --dangerously-skip-permissions when running as root.
 # The node:lts-bookworm image already includes user 'node' (UID/GID 1000).
