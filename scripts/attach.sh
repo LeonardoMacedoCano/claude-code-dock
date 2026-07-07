@@ -44,7 +44,11 @@ echo ""
 echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
-docker exec -it "${CONTAINER_NAME}" tmux attach-session -t main || true
+# --user node: the container image starts as root by default (so
+# entrypoint.sh's PUID/PGID step-down can run), but the tmux session lives
+# under whatever UID 'node' currently maps to -- a root exec would look at
+# root's own tmux socket path and never find it.
+docker exec -it --user node "${CONTAINER_NAME}" tmux attach-session -t main || true
 
 echo ""
 echo -e "  ${GREEN}[✓]${RESET} Disconnected from Claude Code."

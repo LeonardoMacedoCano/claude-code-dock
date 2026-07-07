@@ -51,12 +51,19 @@ The entrypoint validates this on every start and now fails with a boxed,
 explicit message instead of a bare `EACCES` — look for `✗ FATAL: Config
 directory is not writable` in the logs. Fix:
 ```bash
-# Fix permissions (UID 1000 = node user) on CONFIG_BASE_PATH/REMOTE_SESSION_NAME
+# Fix permissions (UID 1000 = node user, or your PUID/PGID if set in .env)
+# on CONFIG_BASE_PATH/REMOTE_SESSION_NAME
 chown -R 1000:1000 <your CONFIG_BASE_PATH>/<REMOTE_SESSION_NAME>
 ```
 Also confirm `CONFIG_BASE_PATH` is actually set in `.env` — if empty, it
 silently falls back to `./configs` (relative to wherever `docker compose`
 runs from), which Docker then creates owned by root.
+
+**Alternative — if the directory is already owned by a host user that isn't
+UID/GID 1000** (common on some NAS setups): instead of chowning the host
+directory to 1000, set `PUID`/`PGID` in `.env` to that host user's `id -u`/
+`id -g` and restart. The container remaps its internal `node` account to
+match instead of requiring the host directory to change ownership.
 
 **B) WORKSPACE_PATH does not exist:**
 ```
@@ -332,13 +339,14 @@ docker exec claude-code-dock find /home/node -name "credentials*" 2>/dev/null
 
 **B) Incorrect permission on the config directory:**
 ```bash
-# Check permissions (must be accessible to UID 1000)
+# Check permissions (must be accessible to UID 1000, or your PUID/PGID)
 ls -la "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}/"
 
 # Fix
 chown -R 1000:1000 "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}/"
 chmod 700 "${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}/"
 ```
+(Or set `PUID`/`PGID` in `.env` to match the directory's existing owner instead — see the config-volume section above.)
 
 **C) Volume not appearing in `docker inspect`, or `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` changed:**
 ```bash
@@ -423,11 +431,15 @@ docker compose down && docker compose up -d
 # Check file ownership on the host
 ls -la /your/workspace/
 
-# The container runs as node (UID 1000)
-docker exec claude-code-dock id
+# The container runs as node (UID 1000 by default, or your PUID/PGID)
+docker exec --user node claude-code-dock id
 
-# If the workspace belongs to a different user on the host:
+# If the workspace belongs to a different user on the host, either:
 chown -R 1000:1000 /your/workspace/
+# ...or set PUID/PGID in .env to that host user's uid/gid instead and
+# restart -- the container remaps 'node' to match, no host chown needed:
+#   PUID=$(id -u)
+#   PGID=$(id -g)
 # OR add write permission for all (fine for homelab):
 chmod -R 777 /your/workspace/
 ```

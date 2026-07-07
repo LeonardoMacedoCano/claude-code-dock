@@ -2,6 +2,63 @@
 
 set -eo pipefail
 
+# --- Root step-down (PUID/PGID) --------------------------------------------
+# The image starts as root by default (see Dockerfile: no permanent USER
+# directive) so this block can remap the built-in 'node' account to a
+# different UID/GID before anything else runs -- LinuxServer.io-style, so a
+# bind-mounted host directory owned by a non-1000 host user doesn't need a
+# manual `chown -R 1000:1000`. This is the ONLY part of entrypoint.sh that
+# ever runs as root, and it never writes into a bind mount -- only this
+# container's own HOME directory entry, which lives in the image layer, not
+# a mount point (the mounted subdirectories under it, like .claude, remain
+# the operator's responsibility to chown on the host; see validate_config()
+# below for the fatal() message that tells them so, now PUID/PGID-aware).
+#
+# setpriv (util-linux -- present in every Debian base image already, no
+# extra package needed) is used instead of a fork-based su/runuser: it
+# execve()s straight into the target command, leaving no wrapper process
+# behind, which preserves the "the selected process is PID 1" guarantee this
+# whole project is built around (see CLAUDE.md). --reuid/--regid set the
+# real, effective, AND saved uid/gid together, so the dropped process cannot
+# later regain root through the POSIX saved-set-user-ID backdoor
+# (seteuid(0) succeeding because the saved uid was left at 0).
+#
+# After this exec, the script re-runs from the very top as the now-current
+# (non-root) user -- `id -u` is no longer 0, so this whole block is skipped
+# on that second pass and everything below behaves exactly as it did before
+# PUID/PGID existed.
+if [ "$(id -u)" = "0" ]; then
+    PUID="${PUID:-1000}"
+    PGID="${PGID:-1000}"
+    FATAL_MARKER_FILE="${FATAL_MARKER_FILE:-/tmp/claude-dock-fatal}"
+
+    if ! [[ "${PUID}" =~ ^[0-9]+$ ]] || ! [[ "${PGID}" =~ ^[0-9]+$ ]] || [ "${PUID}" = "0" ] || [ "${PGID}" = "0" ]; then
+        echo "FATAL: PUID/PGID must be positive integers greater than 0 (got PUID=${PUID}, PGID=${PGID})." >&2
+        echo "PUID/PGID=0 would run Claude Code as root, which Claude Code 2.x refuses under --dangerously-skip-permissions and which this project deliberately does not support." >&2
+        echo "Set PUID/PGID to your host user's uid/gid (run 'id -u' / 'id -g' on the host) in .env instead." >&2
+        touch "${FATAL_MARKER_FILE}" 2>/dev/null || true
+        exec sleep infinity
+    fi
+
+    if [ "${PUID}" != "1000" ] || [ "${PGID}" != "1000" ]; then
+        GROUPMOD_OK=true
+        groupmod -o -g "${PGID}" node 2>&1 || GROUPMOD_OK=false
+        USERMOD_OK=true
+        usermod -o -u "${PUID}" node 2>&1 || USERMOD_OK=false
+
+        if [ "${GROUPMOD_OK}" = "false" ] || [ "${USERMOD_OK}" = "false" ]; then
+            echo "FATAL: could not remap the 'node' account to PUID=${PUID}/PGID=${PGID}." >&2
+            touch "${FATAL_MARKER_FILE}" 2>/dev/null || true
+            exec sleep infinity
+        fi
+
+        chown "${PUID}:${PGID}" "${HOME}" 2>/dev/null || true
+    fi
+
+    exec setpriv --reuid=node --regid=node --init-groups /bin/bash "$0" "$@"
+fi
+# --- end root step-down -----------------------------------------------------
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -118,13 +175,17 @@ fatal() {
 # Fails fast on misconfiguration that would otherwise surface as a silent,
 # hard-to-diagnose restart loop: an unrecognized AUTO_START_MODE (a typo
 # quietly falls through to interactive today, unnoticed) or a mounted
-# directory the 'node' user (UID 1000) cannot write to (the #1 cause of
-# crash loops — usually a bind-mounted host path owned by root because
-# CONFIG_BASE_PATH/WORKSPACE_PATH was unset, misspelled, or never chown'd).
+# directory the 'node' user (UID ${PUID:-1000}, remapped from the default
+# 1000 by the root step-down block above when PUID/PGID are set) cannot
+# write to (the #1 cause of crash loops — usually a bind-mounted host path
+# owned by root because CONFIG_BASE_PATH/WORKSPACE_PATH was unset,
+# misspelled, or never chown'd to match PUID/PGID).
 validate_config() {
     log_step "Validating configuration..."
 
     local mode="${AUTO_START_MODE:-interactive}"
+    local target_uid="${PUID:-1000}"
+    local target_gid="${PGID:-1000}"
     case "${mode}" in
         interactive|remote|shell) ;;
         *)
@@ -142,8 +203,8 @@ validate_config() {
         [ -n "${CONFIG_BASE_PATH:-}" ] && [ -n "${REMOTE_SESSION_NAME:-}" ] && \
             config_host_path="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
         fatal "Config directory is not writable" \
-            "/home/node/.claude (bind-mounted from CONFIG_BASE_PATH/REMOTE_SESSION_NAME on the host) is owned by ${BOLD}${config_owner}${RESET}, but this container runs as ${BOLD}node (uid=1000, gid=1000)${RESET} and cannot write to it.\n\n  This almost always means the folder did not exist on the host yet, so Docker auto-created it as root the moment this container started." \
-            "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R 1000:1000 ${config_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}\n\n    If CONFIG_BASE_PATH is not set in .env, set it first — otherwise it\n    silently falls back to ./configs, also created owned by root.\n    scripts/install.sh does this chown for you automatically on first setup."
+            "/home/node/.claude (bind-mounted from CONFIG_BASE_PATH/REMOTE_SESSION_NAME on the host) is owned by ${BOLD}${config_owner}${RESET}, but this container runs as ${BOLD}node (uid=${target_uid}, gid=${target_gid})${RESET} and cannot write to it.\n\n  This almost always means the folder did not exist on the host yet, so Docker auto-created it as root the moment this container started." \
+            "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R ${target_uid}:${target_gid} ${config_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}\n\n    If CONFIG_BASE_PATH is not set in .env, set it first — otherwise it\n    silently falls back to ./configs, also created owned by root.\n    scripts/install.sh does this chown for you automatically on first setup (honoring PUID/PGID from .env if set)."
     fi
 
     if ! mkdir -p "${WORKSPACE_DIR:-/workspace}" 2>/dev/null || \
@@ -152,8 +213,8 @@ validate_config() {
         workspace_owner=$(stat -c '%U:%G (uid=%u, gid=%g)' "${WORKSPACE_DIR:-/workspace}" 2>/dev/null || echo "unknown")
         local workspace_host_path="${WORKSPACE_PATH:-<your WORKSPACE_PATH>}"
         fatal "Workspace directory is not writable" \
-            "${WORKSPACE_DIR:-/workspace} (bind-mounted from WORKSPACE_PATH on the host) is owned by ${BOLD}${workspace_owner}${RESET}, but this container runs as ${BOLD}node (uid=1000, gid=1000)${RESET} and cannot write to it." \
-            "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R 1000:1000 ${workspace_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}"
+            "${WORKSPACE_DIR:-/workspace} (bind-mounted from WORKSPACE_PATH on the host) is owned by ${BOLD}${workspace_owner}${RESET}, but this container runs as ${BOLD}node (uid=${target_uid}, gid=${target_gid})${RESET} and cannot write to it." \
+            "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R ${target_uid}:${target_gid} ${workspace_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}"
     fi
 
     log_info "Configuration OK: mode=${mode}, config dir writable, workspace writable."
@@ -166,6 +227,7 @@ print_banner
 log_step "Startup configuration:"
 log_info "Execution mode:    ${BOLD}${AUTO_START_MODE:-interactive}${RESET}"
 log_info "Auto-approve:      ${BOLD}${CLAUDE_AUTO_APPROVE:-false}${RESET}"
+log_info "Running as:        ${BOLD}$(id -un 2>/dev/null || echo node) (uid=${PUID:-1000}, gid=${PGID:-1000})${RESET}"
 if [ -n "${REMOTE_SESSION_NAME:-}" ]; then
     log_info "Session ID:        ${BOLD}${REMOTE_SESSION_NAME}${RESET}"
 else

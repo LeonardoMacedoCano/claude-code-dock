@@ -16,6 +16,27 @@ setup() {
   HEALTHCHECK_CMD="$(sed -n '/^    CMD if/,/^        fi$/p' "$DOCKERFILE" | sed '1s/^[[:space:]]*CMD[[:space:]]*//')"
   export HEALTHCHECK_CMD
   [ -n "$HEALTHCHECK_CMD" ]
+
+  # The real HEALTHCHECK CMD wraps its tmux calls in `setpriv --reuid=node
+  # --regid=node --init-groups` (see Dockerfile) since it runs as root by
+  # default and the tmux session it's checking was created by 'node'. A real
+  # setpriv needs actual root to change uid/gid, which this test runner
+  # doesn't have -- so it's mocked the same way entrypoint_puid_pgid.bats
+  # mocks it: strip setpriv's own --flag args and exec the rest, simulating
+  # a successful (no-op, since we're already effectively "the target user"
+  # here) privilege drop.
+  cat > "$MOCK_BIN/setpriv" << 'EOF'
+#!/bin/bash
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --*) ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+exec "${ARGS[@]}"
+EOF
+  chmod +x "$MOCK_BIN/setpriv"
 }
 
 teardown() {

@@ -172,16 +172,31 @@ backup_env() {
 
     # Name-pattern based, not a fixed list of variable names -- excludes any
     # line whose key looks like a secret (…TOKEN…, …KEY…, …SECRET…,
-    # …PASSWORD…, …PASSPHRASE…) so a new secret-like var doesn't need this
-    # script updated to stay excluded from the plaintext .env copy.
+    # …PASSWORD…, …PASSPHRASE…, …CREDENTIAL…, …AUTH…, …CERT…) so a new
+    # secret-like var doesn't need this script updated to stay excluded from
+    # the plaintext .env copy.
+    #
+    # Deliberately NOT included: "PAT" (personal access token). It's a
+    # substring of "PATH", and this project's own .env already has three
+    # load-bearing, non-secret vars ending in exactly that suffix
+    # (WORKSPACE_PATH, CONFIG_BASE_PATH, SHARED_CONFIG_PATH) -- adding PAT
+    # would silently drop all three from every backup's .env.backup instead
+    # of catching the rare *_PAT var. A bespoke PAT-named secret variable
+    # still needs to contain TOKEN, KEY, SECRET, or CREDENTIAL to be masked
+    # (e.g. prefer GITHUB_PAT_TOKEN over bare GITHUB_PAT).
     #
     # Second pass: also excludes lines whose *value* is a URL with
     # credentials embedded (user:pass@host, e.g. GIT_REPO_URL set to
     # https://user:ghp_xxx@github.com/... instead of the recommended separate
     # GITHUB_TOKEN_FILE) -- a secret sitting in a variable name that doesn't
     # look secret would otherwise slip through the name-based filter above.
+    #
+    # This is a denylist, not an allowlist -- it is heuristic, best-effort
+    # coverage, not a guarantee. A secret in a variable named outside these
+    # patterns (e.g. a bespoke `MY_UNUSUAL_VAR`) would not be caught. When in
+    # doubt, keep .env chmod 600 and treat backups as sensitive regardless.
     MASKED_ENV_TMPDIR=$(mktemp -d)
-    grep -vE "^[A-Za-z_]*(TOKEN|KEY|SECRET|PASSWORD|PASSPHRASE)[A-Za-z_]*\s*=" "${ENV_FILE}" \
+    grep -vE "^[A-Za-z_]*(TOKEN|KEY|SECRET|PASSWORD|PASSPHRASE|CREDENTIAL|AUTH|CERT)[A-Za-z_]*\s*=" "${ENV_FILE}" \
         | grep -vE '=.*://[^/@[:space:]]+:[^/@[:space:]]+@' \
         > "${MASKED_ENV_TMPDIR}/.env.backup" 2>/dev/null || true
     ok ".env backed up (secret-looking variables and credential-embedded URLs excluded — included in archive)"

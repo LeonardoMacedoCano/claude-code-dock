@@ -31,6 +31,11 @@ usage() {
     echo "  Restarts <container-name> (default: \$CONTAINER_NAME from .env, or"
     echo "  claude-code-dock) if Docker reports its healthcheck as 'unhealthy'."
     echo ""
+    echo "  Optional: set \$WATCHDOG_NTFY_URL to a webhook URL (e.g. an ntfy.sh"
+    echo "  topic) to get a notification when this script restarts the container,"
+    echo "  fails to restart it, or skips it due to a fatal misconfiguration marker."
+    echo "  Silently a no-op if unset, or if curl isn't installed."
+    echo ""
     echo "  'restart: unless-stopped' in docker-compose.yml only reacts to the"
     echo "  container actually exiting -- a wedged tmux pane that Docker marks"
     echo "  unhealthy but that hasn't crashed is never auto-restarted on its own."
@@ -59,6 +64,20 @@ fi
 
 CONTAINER_NAME="${1:-${CONTAINER_NAME:-claude-code-dock}}"
 
+# Optional, best-effort notification when this script actually takes (or
+# skips) action -- not on every healthy/starting no-op, which would just be
+# cron-frequency noise. Generic HTTP POST of a plain-text body: works as-is
+# with ntfy.sh (WATCHDOG_NTFY_URL=https://ntfy.sh/your-topic) or any webhook
+# that accepts a raw POST body. Never fails the watchdog run itself -- a
+# missing curl, an unreachable URL, or a non-2xx response is swallowed, since
+# a notification failing is not a reason to skip the actual restart logic.
+notify() {
+    local message="$1"
+    [ -z "${WATCHDOG_NTFY_URL:-}" ] && return 0
+    command -v curl &>/dev/null || return 0
+    curl -fsS -m 10 -d "${message}" "${WATCHDOG_NTFY_URL}" &>/dev/null || true
+}
+
 STATUS=$(docker inspect --format '{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
 
 if [ -z "${STATUS}" ]; then
@@ -80,6 +99,7 @@ case "${STATUS}" in
         if docker exec "${CONTAINER_NAME}" test -f /tmp/claude-dock-fatal 2>/dev/null; then
             warn "${CONTAINER_NAME} is unhealthy due to a fatal startup misconfiguration, not a wedged process — restarting would not fix it."
             echo -e "    Check: docker logs ${CONTAINER_NAME}"
+            notify "claude-code-dock: ${CONTAINER_NAME} is unhealthy due to a fatal startup misconfiguration — not restarted. Check: docker logs ${CONTAINER_NAME}"
             exit 0
         fi
 
@@ -87,7 +107,9 @@ case "${STATUS}" in
         step "docker restart ${CONTAINER_NAME}"
         if docker restart "${CONTAINER_NAME}" &>/dev/null; then
             ok "${CONTAINER_NAME} restarted."
+            notify "claude-code-dock: ${CONTAINER_NAME} was unhealthy — restarted successfully."
         else
+            notify "claude-code-dock: ${CONTAINER_NAME} is unhealthy and docker restart FAILED — needs manual attention."
             fail "docker restart failed for ${CONTAINER_NAME}."
         fi
         ;;

@@ -40,4 +40,6 @@ echo -e "  ${YELLOW}To run Remote Control as the main process, set:${RESET}"
 echo -e "  ${BOLD}AUTO_START_MODE=remote${RESET} in .env"
 echo ""
 
-docker exec -it "${CONTAINER_NAME}" claude --remote-control "$@"
+# --user node: the container starts as root by default (see
+# entrypoint.sh's PUID/PGID step-down); claude must never run as root.
+docker exec -it --user node "${CONTAINER_NAME}" claude --remote-control "$@"

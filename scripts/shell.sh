@@ -45,7 +45,10 @@ echo ""
 echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
-docker exec -it "${CONTAINER_NAME}" /bin/bash
+# --user node: matches this project's non-root-by-default runtime (the image
+# itself starts as root so entrypoint.sh's PUID/PGID step-down can run, but
+# the long-running process and this debug shell should both land as 'node').
+docker exec -it --user node "${CONTAINER_NAME}" /bin/bash
 
 echo ""
 echo -e "  ${GREEN}[✓]${RESET} Shell closed. Back on host."

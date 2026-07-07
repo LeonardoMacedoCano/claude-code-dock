@@ -112,3 +112,41 @@ DOCKEREOF
   [[ "$output" == *"fake-container"* ]]
   unset CONTAINER_NAME
 }
+
+_mock_curl() {
+  cat > "$MOCK_BIN/curl" << CURLEOF
+#!/bin/bash
+echo "curl called with: \$*" >> "${TEST_TMPDIR}/curl_calls"
+exit 0
+CURLEOF
+  chmod +x "$MOCK_BIN/curl"
+}
+
+@test "WATCHDOG_NTFY_URL set: successful restart sends a notification" {
+  _mock_docker "unhealthy"
+  _mock_curl
+  export WATCHDOG_NTFY_URL="https://ntfy.example/topic"
+  run bash "$WATCHDOG_SCRIPT" fake-container
+  [ "$status" -eq 0 ]
+  [ -f "$TEST_TMPDIR/curl_calls" ]
+  grep -q "https://ntfy.example/topic" "$TEST_TMPDIR/curl_calls"
+  unset WATCHDOG_NTFY_URL
+}
+
+@test "WATCHDOG_NTFY_URL unset: no curl call is made" {
+  _mock_docker "unhealthy"
+  _mock_curl
+  run bash "$WATCHDOG_SCRIPT" fake-container
+  [ "$status" -eq 0 ]
+  [ ! -f "$TEST_TMPDIR/curl_calls" ]
+}
+
+@test "WATCHDOG_NTFY_URL set: healthy container sends no notification" {
+  _mock_docker "healthy"
+  _mock_curl
+  export WATCHDOG_NTFY_URL="https://ntfy.example/topic"
+  run bash "$WATCHDOG_SCRIPT" fake-container
+  [ "$status" -eq 0 ]
+  [ ! -f "$TEST_TMPDIR/curl_calls" ]
+  unset WATCHDOG_NTFY_URL
+}

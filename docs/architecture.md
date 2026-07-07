@@ -64,9 +64,11 @@ The core of the system. Contains:
 | tmux | apt package | PID 1 — hosts the Claude session |
 | bash | 5.x | Shell and scripts |
 
-### 2. Non-root user (`node`, UID 1000)
+### 2. Non-root user (`node`, UID/GID 1000 by default, remappable via `PUID`/`PGID`)
 
-The container runs as the `node` user (UID/GID 1000), not as `root`. This is required because Claude Code 2.x blocks `--dangerously-skip-permissions` when executed as root. The `node:lts-bookworm` base image already includes this user.
+The actual long-running process (bash/tmux/claude) always runs as the `node` user, not as `root`. This is required because Claude Code 2.x blocks `--dangerously-skip-permissions` when executed as root. The `node:lts-bookworm` base image already includes this user at UID/GID 1000.
+
+The image itself starts as root by default, though — `entrypoint.sh`'s first block uses that to remap `node` to `PUID`/`PGID` (set them in `.env` if your host user isn't UID/GID 1000) via `usermod`/`groupmod`, then immediately drops privilege via `setpriv` before doing anything else. `PUID`/`PGID=0` is refused. See [Security](security.md) and `CLAUDE.md`'s "Non-root user" section for the full mechanism.
 
 ### 3. Configuration Volume (`CONFIG_BASE_PATH/REMOTE_SESSION_NAME`)
 
@@ -215,16 +217,16 @@ Claude starts already authenticated -- no new login required
 With `exec tmux new-session -s main claude`:
 - tmux is PID 1 (the main process)
 - Signals reach tmux, which forwards them to Claude
-- `docker exec -it ... tmux attach-session -t main` connects to the Claude session
+- `docker exec -it --user node ... tmux attach-session -t main` connects to the Claude session
 - Container stops and restarts correctly when tmux exits
 
 ### Why not use `docker attach` directly?
 
-`docker attach` connects to PID 1's stdin/stdout, which is `tmux`. The raw tmux multiplexer output is not useful for interactive use. Instead, `docker exec -it ... tmux attach-session -t main` connects properly to the running Claude session inside tmux.
+`docker attach` connects to PID 1's stdin/stdout, which is `tmux`. The raw tmux multiplexer output is not useful for interactive use. Instead, `docker exec -it --user node ... tmux attach-session -t main` connects properly to the running Claude session inside tmux (`--user node` matters: the image starts as root by default, and only `node` can see the tmux session's socket).
 
-### Why non-root user (`node`, UID 1000)?
+### Why non-root user (`node`, UID/GID 1000 by default, remappable via PUID/PGID)?
 
-Claude Code 2.x blocks `--dangerously-skip-permissions` when the process runs as root. Using a dedicated user solves this and is a security best practice. We reuse the `node` user already present in the base image to avoid GID conflicts.
+Claude Code 2.x blocks `--dangerously-skip-permissions` when the process runs as root. Using a dedicated user solves this and is a security best practice. We reuse the `node` user already present in the base image to avoid GID conflicts, remapped to `PUID`/`PGID` at startup when those differ from the 1000/1000 default.
 
 ### Why `restart: unless-stopped` and not `always`?
 

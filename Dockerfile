@@ -68,10 +68,28 @@ COPY --chmod=755 docker/claude-console.sh /usr/bin/claude-console
 # mode only, to try --continue and fall back safely if it isn't resumable.
 COPY --chmod=755 docker/claude-remote-launch.sh /usr/local/bin/claude-remote-launch.sh
 
+# setpriv (util-linux) is what entrypoint.sh uses to drop from root to the
+# 'node' account (optionally remapped to PUID/PGID first) before ever
+# exec'ing bash/tmux/claude -- it's part of every Debian base image already,
+# this is just a build-time sanity check so a future base image swap that
+# somehow dropped it fails loudly here instead of silently breaking the
+# step-down at container startup.
+RUN command -v setpriv >/dev/null || (echo "setpriv (util-linux) not found in base image" >&2 && exit 1)
+
 # Claude Code 2.x blocks --dangerously-skip-permissions when running as root.
 # The node:lts-bookworm image already includes user 'node' (UID/GID 1000).
+# No permanent USER directive here (deliberately) -- the container starts as
+# root by default so entrypoint.sh's root step-down block can remap 'node' to
+# PUID/PGID (if set) via usermod/groupmod, which requires root, before it
+# drops to that user via setpriv and execs everything else. The *actual*
+# long-running process (bash in shell mode, or the tmux session in
+# interactive/remote mode) always still ends up non-root by the time it
+# starts -- see the "Root step-down" block at the top of entrypoint.sh. Do
+# not add USER node/USER <anything> back here; it would make PUID/PGID
+# remapping impossible (usermod/groupmod need root) without reintroducing a
+# runtime privilege escalation back to root, which is what this pattern is
+# built specifically to avoid.
 ENV HOME=/home/node
-USER node
 
 VOLUME ["/home/node/.claude"]
 
@@ -80,12 +98,20 @@ VOLUME ["/home/node/.claude"]
 # nothing). Interactive/remote: the tmux session must exist AND its pane must
 # not be dead -- a crashed/exited claude process leaves the session up with a
 # dead pane, which a bare `tmux has-session` check would report as healthy.
+#
+# The tmux checks run via `setpriv --reuid=node --regid=node` rather than
+# directly: HEALTHCHECK CMD executes as this image's default user, which is
+# now root (no permanent USER directive -- see above), but the actual tmux
+# session was created by 'node' (whatever UID/GID that currently maps to via
+# PUID/PGID), whose default tmux server socket lives at a UID-specific path
+# under /tmp. A root-invoked `tmux has-session` would look in root's own
+# socket path instead and always report "no session", regardless of PUID/PGID.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD if [ "${AUTO_START_MODE:-interactive}" = "shell" ]; then \
             [ "$(ps -p 1 -o comm= 2>/dev/null)" = "bash" ] || exit 1; \
         else \
-            tmux has-session -t main 2>/dev/null || exit 1; \
-            [ "$(tmux list-panes -t main -F '#{pane_dead}' 2>/dev/null | head -1)" = "0" ] || exit 1; \
+            setpriv --reuid=node --regid=node --init-groups tmux has-session -t main 2>/dev/null || exit 1; \
+            [ "$(setpriv --reuid=node --regid=node --init-groups tmux list-panes -t main -F '#{pane_dead}' 2>/dev/null | head -1)" = "0" ] || exit 1; \
         fi
 
 ENTRYPOINT ["/bin/bash", "/usr/local/bin/entrypoint.sh"]

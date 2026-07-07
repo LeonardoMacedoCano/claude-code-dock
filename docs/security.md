@@ -87,30 +87,44 @@ This is not a bug specific to claude-code-dock — it's how container env vars w
 
 The GitHub token specifically avoids this: `GITHUB_TOKEN_FILE` in `.env` holds a *host path*, not the token itself, and `docker-compose.yml` mounts that file, read-only, at the fixed in-container path `/run/secrets/github_token` — so the token's value is never in `.env`, never in a `docker-compose.yml environment:` line, and never in `docker inspect --format '{{.Config.Env}}'` output. It narrows *where the token sits at rest*, not the daemon-access trust boundary above: `docker exec claude-code-dock cat /run/secrets/github_token` still reads it, same as any other bind-mounted file.
 
+**6. The most realistic exfiltration path is the agent itself, not an external attacker.**
+
+The token flows into `~/.git-credentials` in plaintext (`chmod 600`, but plaintext) so `git push`/`git pull` work non-interactively (see `entrypoint.sh`). That file lives in the same filesystem namespace Claude Code operates in. If `CLAUDE_AUTO_APPROVE=true` (`--dangerously-skip-permissions`) is set, Claude executes shell commands without per-action confirmation — including, hypothetically, commands suggested by content it reads, such as instructions embedded in a file inside a cloned/untrusted repository (a prompt-injection scenario). In that scenario the attacker doesn't need to compromise the container or the Docker daemon at all: the agent itself is the one with read access to the token, and auto-approve removes the human checkpoint that would normally catch an unexpected `curl` or `cat ~/.git-credentials` in a proposed command.
+
+This is not a bug in claude-code-dock — it's a consequence of combining "credentials readable by the workspace process" (required for git push/pull to work at all) with "no human reviews each command" (what `CLAUDE_AUTO_APPROVE` explicitly opts into). It does mean the two should be considered together, not independently:
+
+- Treat `CLAUDE_AUTO_APPROVE=true` as appropriate only for workspaces/repositories you trust the *content* of, not just the host environment — a malicious `README.md` or issue comment in a repo you clone is enough to act as the attack's entry point.
+- If you routinely point this container at repositories you don't fully trust (forks, third-party PRs, scratch clones), prefer `CLAUDE_AUTO_APPROVE=false` for that session, or use a `GITHUB_TOKEN_FILE` pointing at a token scoped to the narrowest possible repo/permission set (fine-grained PAT, single repo, no admin scopes) so a leak is bounded.
+- A leaked token is revocable and bounded in blast radius if scoped narrowly; a leaked token with broad `repo` scope across your whole account is not.
+
 ---
 
 ## Container Security
 
-### Non-root user (node, UID 1000)
+### Non-root user (node, UID/GID 1000 by default, remappable via PUID/PGID)
 
-The container runs as the `node` user (UID/GID 1000) — **not as root**. This is both a security and functional decision:
+The actual long-running process (bash/tmux/claude) always runs as the `node` user — **never as root**. This is both a security and functional decision:
 
 **Reasons:**
 - Claude Code 2.x blocks `--dangerously-skip-permissions` when run as root
 - Reduces the attack surface inside the container
 - Follows container best practices
 
+**How it works:** the image itself starts as root (needed so `entrypoint.sh` can `usermod`/`groupmod` the `node` account to `PUID`/`PGID` if set), then immediately drops privilege via `setpriv` before running anything else. `PUID`/`PGID=0` is refused outright — there is no way to make this container's Claude process actually run as root.
+
 **Implications for volumes:**
-- The workspace and config directory must be accessible to UID 1000
-- On most homelabs (Unraid, Synology, etc.), volumes have broad permissions
+- The workspace and config directory must be accessible to the resulting UID (1000 by default, or your `PUID`/`PGID`)
+- On most homelabs (Unraid, Synology, etc.), volumes have broad permissions — but where they don't, prefer setting `PUID`/`PGID` to match the host owner over loosening the host directory's permissions
 
 ```bash
-# Verify current user in the container
-docker exec claude-code-dock whoami
+# Verify current user in the container -- note --user node: a bare `docker
+# exec` now defaults to root (the image's default user), so this flag is
+# required to see what the actual Claude Code process runs as
+docker exec --user node claude-code-dock whoami
 # -> node
 
-docker exec claude-code-dock id
-# -> uid=1000(node) gid=1000(node) groups=1000(node)
+docker exec --user node claude-code-dock id
+# -> uid=1000(node) gid=1000(node) groups=1000(node)  (or your PUID/PGID)
 ```
 
 ### No exposed ports
@@ -291,4 +305,5 @@ trivy image claude-code-dock_claude-code-dock
 [ ] Container runs as node user (not root) -- verify with: docker exec claude-code-dock whoami
 [ ] CLAUDE_AUTO_APPROVE is false unless you've deliberately decided to trust this workspace
 [ ] Anyone with `docker` access to this host is treated as trusted (env vars are readable via docker inspect/exec; the mounted GITHUB_TOKEN_FILE content is readable via docker exec)
+[ ] If CLAUDE_AUTO_APPROVE=true, the token behind GITHUB_TOKEN_FILE is scoped as narrowly as possible (fine-grained PAT, single repo) -- with auto-approve on, the agent itself (not just the host) can read ~/.git-credentials
 ```

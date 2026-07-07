@@ -122,6 +122,30 @@ _create_old_backups() {
   rm -rf "$EXTRACT_DIR"
 }
 
+@test "excludes secret-looking variables (CREDENTIAL/AUTH/CERT) while preserving *_PATH vars from .env backup" {
+  printf 'SOME_CREDENTIAL=abc123\nSOME_AUTH_HEADER=bearer-xyz\nSOME_CERT_DATA=----BEGIN\nWORKSPACE_PATH=/mnt/user/projects\nCONFIG_BASE_PATH=./configs\nSHARED_CONFIG_PATH=./shared\nREMOTE_SESSION_NAME=%s\n' "$SESSION" > "$TMP_PROJECT/.env"
+
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+
+  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  [ -n "$ARCHIVE" ]
+
+  EXTRACT_DIR="$(mktemp -d)"
+  tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR" .env.backup 2>/dev/null
+  [ -f "$EXTRACT_DIR/.env.backup" ]
+
+  run grep -E "^(SOME_CREDENTIAL|SOME_AUTH_HEADER|SOME_CERT_DATA)=" "$EXTRACT_DIR/.env.backup"
+  [ "$status" -ne 0 ]
+
+  # *_PATH vars must survive -- PAT is deliberately not in the denylist
+  # because it collides with this exact suffix (see backup.sh comment).
+  grep -q "^WORKSPACE_PATH=/mnt/user/projects$" "$EXTRACT_DIR/.env.backup"
+  grep -q "^CONFIG_BASE_PATH=./configs$" "$EXTRACT_DIR/.env.backup"
+  grep -q "^SHARED_CONFIG_PATH=./shared$" "$EXTRACT_DIR/.env.backup"
+  rm -rf "$EXTRACT_DIR"
+}
+
 @test "process-exported CONFIG_BASE_PATH/REMOTE_SESSION_NAME are honored even without a matching .env file" {
   rm -f "$TMP_PROJECT/.env"
   mkdir -p "$TMP_PROJECT/other-configs/$SESSION"

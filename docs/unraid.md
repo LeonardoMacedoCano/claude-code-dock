@@ -415,7 +415,7 @@ cd /mnt/user/appdata/claude-code-dock
 
 ### "Permission denied" when accessing the workspace
 
-Unraid manages permissions differently. The container runs as the `node` user (UID 1000). Check:
+Unraid manages permissions differently. The container runs as the `node` user (UID/GID 1000 by default). Check:
 
 ```bash
 # Check folder ownership
@@ -427,6 +427,13 @@ chown -R 1000:1000 /mnt/cache/projects
 
 # Alternative: open permissions (fine for personal homelab)
 chmod 777 /mnt/cache/projects
+
+# Alternative: instead of chowning the host folder, set PUID/PGID in .env to
+# match whatever UID/GID your Unraid share is actually owned by (check with
+# `ls -la` above) and restart -- the container remaps its internal 'node'
+# account to match instead:
+#   PUID=99   # Unraid's own 'nobody' user, common on default shares
+#   PGID=100  # Unraid's own 'users' group
 ```
 
 ### Container does not start after array reboot

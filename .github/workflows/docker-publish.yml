@@ -10,6 +10,16 @@ on:
     # forces a fresh npm install rather than reusing the GHA layer cache).
     - cron: "0 6 * * 1"
   workflow_dispatch:
+    inputs:
+      promote_stable:
+        description: >-
+          Also tag+push this build as 'stable'. 'latest' keeps moving on every
+          push and on the weekly rebuild regardless of this input -- 'stable'
+          only ever moves when a human runs this manually with this checked,
+          so anyone can pin CLAUDE_DOCK_IMAGE=...:stable to avoid riding an
+          untested weekly @anthropic-ai/claude-code bump.
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -71,6 +81,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch,enable=${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=raw,value=stable,enable=${{ github.event_name == 'workflow_dispatch' && inputs.promote_stable == true }}
 
       - name: Build and push
         id: build

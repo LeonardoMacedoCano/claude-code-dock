@@ -23,6 +23,11 @@ services:
         CLAUDE_DOCK_SOURCE_PATH: ${CLAUDE_SOURCE_PATH:-}
         CLAUDE_DOCK_VERSION: ${CLAUDE_DOCK_VERSION:-main}
     environment:
+      # Read by entrypoint.sh's root step-down block to remap the 'node'
+      # account before dropping privilege -- default 1000/1000 matches the
+      # image's built-in node user, so leaving these unset is a no-op.
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - AUTO_START_MODE=${AUTO_START_MODE:-interactive}
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-false}
       - CLAUDE_EXTRA_ARGS=${CLAUDE_EXTRA_ARGS:-}

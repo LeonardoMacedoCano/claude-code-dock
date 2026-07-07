@@ -41,20 +41,24 @@ fail() {
     exit 1
 }
 
-# The container runs as UID 1000 ('node'). Directories created here by
-# install.sh (often run as root over SSH on Unraid/NAS) would otherwise stay
-# root-owned, leaving the container unable to write its own config/workspace
-# at startup — the #1 cause of silent restart loops. Best-effort: some hosts
-# (rootless Docker, non-root install.sh runs, NFS with root-squash) can't
-# chown to an arbitrary UID, so failures just fall back to a manual hint.
+# The container runs as PUID:PGID ('node', remapped from the default 1000:1000
+# by entrypoint.sh's root step-down block if PUID/PGID are set in .env).
+# Directories created here by install.sh (often run as root over SSH on
+# Unraid/NAS) would otherwise stay root-owned, leaving the container unable
+# to write its own config/workspace at startup — the #1 cause of silent
+# restart loops. Best-effort: some hosts (rootless Docker, non-root
+# install.sh runs, NFS with root-squash) can't chown to an arbitrary UID, so
+# failures just fall back to a manual hint.
 fix_ownership() {
     local dir="$1"
-    if chown -R 1000:1000 "${dir}" 2>/dev/null; then
-        ok "Ownership set to UID 1000 (node): ${dir}"
+    local target_uid="${PUID:-1000}"
+    local target_gid="${PGID:-1000}"
+    if chown -R "${target_uid}:${target_gid}" "${dir}" 2>/dev/null; then
+        ok "Ownership set to UID:GID ${target_uid}:${target_gid} (node): ${dir}"
     else
-        warn "Could not chown ${dir} to 1000:1000 (not root, or unsupported filesystem)."
+        warn "Could not chown ${dir} to ${target_uid}:${target_gid} (not root, or unsupported filesystem)."
         echo -e "    If the container fails to start with a 'not writable' error, run manually:"
-        echo -e "    ${BOLD}chown -R 1000:1000 ${dir}${RESET}"
+        echo -e "    ${BOLD}chown -R ${target_uid}:${target_gid} ${dir}${RESET}"
     fi
 }
 

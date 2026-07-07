@@ -163,15 +163,19 @@ Container (shell mode):
 
 4. **Correct restart behavior:** The container stops when PID 1 stops, and `restart: unless-stopped` restarts it as needed.
 
-### Non-root user (`node`, UID 1000)
+### Non-root user (`node`, UID/GID `PUID`/`PGID`, default 1000/1000)
 
-The container runs as user `node` (UID/GID 1000), **not root**. Reasons:
+The **actual long-running process** (bash in shell mode, or the tmux session in interactive/remote mode) always runs as user `node`, **never root**. Reasons:
 
 1. **Functional requirement:** Claude Code 2.x blocks `--dangerously-skip-permissions` when running as root (UID 0).
 2. **Security best practice:** Containers should not run as root unnecessarily.
-3. **Compatibility:** UID 1000 works with most NAS systems and Unraid.
+3. **Compatibility:** UID 1000 (the default) works with most NAS systems and Unraid; `PUID`/`PGID` let it be remapped to match a host user that isn't 1000.
 
 The `node:lts-bookworm` base image already includes the `node` user (UID/GID 1000). We reuse it instead of creating a new one to avoid GID conflicts.
+
+**How PUID/PGID remapping works:** the *image* itself has no permanent `USER` directive — it starts as root by default, on purpose, because `usermod`/`groupmod` (needed to remap `node` to a different UID/GID) require root. `entrypoint.sh`'s very first block (the "root step-down") checks `id -u`: if it's `0`, it optionally remaps `node` to `PUID`/`PGID` (default 1000/1000, a no-op when left at the default), `chown`s `$HOME` to match, then execs `setpriv --reuid=node --regid=node --init-groups` into a fresh invocation of itself — which is no longer root, so this block is skipped on that second pass and the rest of the script runs exactly as it always did. `setpriv` (util-linux, already present in the base image, no extra package) execve()s directly into the target rather than forking, so no wrapper process is left behind — PID 1 stays whatever ends up at the end of the exec chain (bash or the tmux session), preserving the PID 1 guarantee above. `PUID`/`PGID=0` is rejected with a `fatal()` — this project deliberately does not support running as root, remapped or not.
+
+Because the image now starts as root, manual `docker exec` into the container (`scripts/attach.sh`, `shell.sh`, `claude.sh`, `remote.sh`) must explicitly pass `--user node` — otherwise `docker exec` defaults to root too, and root can't see the tmux session's socket (created by `node`, at a UID-specific path under `/tmp`) or write files as the right user. The Dockerfile `HEALTHCHECK` has the same problem and solves it the same way, wrapping its `tmux` calls in `setpriv --reuid=node --regid=node --init-groups`. `docker/claude-console.sh` (used by Unraid's Console feature, which may invoke it as root) steps down the same way before touching tmux.
 
 ### Volumes
 
@@ -202,6 +206,8 @@ volumes:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `PUID` | `1000` | UID the container remaps its internal `node` account to before dropping root (see `docker/entrypoint.sh`'s root step-down block). `0` is rejected |
+| `PGID` | `1000` | GID counterpart to `PUID` |
 | `AUTO_START_MODE` | `interactive` | Execution mode: `interactive`, `remote`, `shell` |
 | `CLAUDE_AUTO_APPROVE` | `false` | Enables `--dangerously-skip-permissions` (interactive/remote modes) |
 | `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command. Parsed with quote-aware splitting (`eval`-based), so a quoted substring with spaces survives as one argument |
@@ -217,6 +223,7 @@ volumes:
 | `GIT_USER_NAME` | `` | Name for git commits |
 | `GIT_USER_EMAIL` | `` | Email for git commits |
 | `BACKUP_RETENTION` | `10` | Number of backups to keep per session; oldest are removed automatically |
+| `WATCHDOG_NTFY_URL` | `` | Host-side only (read by `scripts/watchdog.sh`, never passed into the container). Optional webhook URL notified on restart/restart-failure/fatal-marker-skip |
 
 ### Mode resolution
 
@@ -261,18 +268,27 @@ Docker Engine processes docker-compose.yml
     ├─ Mounts volume: CONFIG_BASE_PATH/REMOTE_SESSION_NAME → /home/node/.claude
     ├─ Mounts volume: WORKSPACE_PATH → /workspace
     ├─ Mounts volume (optional, ro): SHARED_CONFIG_PATH → /home/node/.claude-shared
-    └─ Starts container with ENTRYPOINT as user node
+    └─ Starts container with ENTRYPOINT as root (see PUID/PGID below)
     │
     ▼
-/usr/local/bin/entrypoint.sh runs (temporary PID 1, user node)
+/usr/local/bin/entrypoint.sh runs (temporary PID 1, root)
     │
+    ├─ Root step-down: id -u = 0, so remap 'node' to PUID/PGID (no-op at the
+    │  1000/1000 default), chown $HOME, then exec setpriv --reuid=node
+    │  --regid=node --init-groups into a fresh invocation of this same
+    │  script — fatal() + sleep infinity if PUID/PGID are invalid or 0, or
+    │  if the usermod/groupmod remap itself fails
+    │  ↳ re-enters entrypoint.sh, this time as node (id -u ≠ 0, so this
+    │    whole block is skipped) — everything below is unchanged from
+    │    before PUID/PGID existed
     ├─ Displays claude-code-dock banner
     ├─ Displays environment variable configuration
     ├─ Validates: command -v claude (must exist) — fatal() + sleep infinity if missing
     ├─ Displays version: claude --version
     ├─ validate_config(): AUTO_START_MODE is interactive/remote/shell, and
-    │  /home/node/.claude + /workspace are writable by UID 1000 — fatal()
-    │  holds PID 1 on sleep infinity instead of exiting on any failure here
+    │  /home/node/.claude + /workspace are writable by the current PUID/PGID
+    │  — fatal() holds PID 1 on sleep infinity instead of exiting on any
+    │  failure here
     ├─ Configures Git: if GIT_USER_NAME and GIT_USER_EMAIL are set
     ├─ Persists skipDangerousModePermissionPrompt in settings.json
     ├─ Applies SHARED_CONFIG_PATH (CLAUDE.md merge + commands symlinks), if mounted
@@ -285,7 +301,7 @@ Docker Engine processes docker-compose.yml
 tmux replaces entrypoint.sh as PID 1 (interactive/remote mode)
     │
     ▼
-Container ready — connect via: docker exec -it claude-code-dock tmux attach-session -t main
+Container ready — connect via: docker exec -it --user node claude-code-dock tmux attach-session -t main
 ```
 
 ### Why `exec` and not a regular call?
@@ -311,16 +327,20 @@ tmux new-session -s main claude --dangerously-skip-permissions
 
 **Technical decisions:**
 - Base `node:lts-bookworm`: Node.js LTS is required for Claude Code. Debian Bookworm is stable.
-- User `node` (UID 1000): required for `--dangerously-skip-permissions` in Claude Code 2.x.
+- `node` user (UID/GID 1000 by default, remappable via `PUID`/`PGID`): required for `--dangerously-skip-permissions` in Claude Code 2.x, which refuses to run as root.
+- No permanent `USER` directive: the image starts as root by default, deliberately — `entrypoint.sh`'s root step-down block needs root to `usermod`/`groupmod` the `node` account to `PUID`/`PGID` before dropping to it via `setpriv`. See "Non-root user" under Architecture above.
+- `setpriv` sanity check (`RUN command -v setpriv || exit 1`): util-linux's `setpriv` is what the step-down uses and is already part of every Debian base image — this just fails the build loudly if some future base image swap ever dropped it, instead of silently breaking the step-down at container startup.
 - `WORKDIR /workspace`: default working directory.
 - `ENV HOME=/home/node`: ensures the node user's home is used correctly.
 - `VOLUME ["/home/node/.claude"]`: documents that this directory must be persisted.
+- `HEALTHCHECK`'s tmux checks run via `setpriv --reuid=node --regid=node --init-groups tmux ...`: the healthcheck probe executes as the image's default user, now root, but the tmux session was created by `node` (whichever UID that currently maps to) — a root-invoked `tmux has-session` looks at root's own socket path and never finds it otherwise.
 - `ENTRYPOINT`: ensures the entrypoint always executes.
 - `/etc/claude-dock-build-source`: written at build time from the `CLAUDE_DOCK_SOURCE_PATH`/`CLAUDE_DOCK_VERSION` build args, as `local:<path>` or `github:<ref>`. Lets `entrypoint.sh` and `scripts/status.sh` report unambiguously which source produced the running image (mirrors the existing `/etc/claude-code-version` marker pattern).
 
 **What NOT to do in the Dockerfile:**
 - Do not add packages without clear justification
-- Do not switch back to root (`USER root`) after `USER node`
+- Do not add a permanent `USER node` (or any other) directive — it would make `usermod`/`groupmod`-based `PUID`/`PGID` remapping impossible (they require root) without reintroducing some other runtime privilege escalation back to root, which is exactly what this pattern exists to avoid. The image starting as root is intentional; `entrypoint.sh`'s step-down block is what guarantees the actual long-running process still ends up non-root.
+- Do not remove or bypass `entrypoint.sh`'s root step-down block, and do not add logic that runs as root beyond it — it's the only part of the script permitted to run as root, and only ever touches `$HOME` itself, never a bind mount
 - Do not use `CMD` instead of `ENTRYPOINT`
 
 ---
@@ -336,6 +356,7 @@ tmux new-session -s main claude --dangerously-skip-permissions
 - `image: ${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest}` + `build:`: both present intentionally — `image:` is what `docker compose pull` (the default install/update path) fetches; `build:` is the fallback path used when `CLAUDE_SOURCE_PATH` is set or someone explicitly runs `docker compose build`. `build.args` also passes `CLAUDE_DOCK_SOURCE_PATH` (raw `CLAUDE_SOURCE_PATH`) and `CLAUDE_DOCK_VERSION` through so the Dockerfile can bake which one was used into `/etc/claude-dock-build-source` — read by `entrypoint.sh`'s startup log and `scripts/status.sh`.
 - Because `image:` + `build:` coexist, Compose only builds when the tag isn't already present locally — a bare `docker compose up -d` will NOT rebuild an already-tagged image, even with `CLAUDE_SOURCE_PATH` set. `install.sh`/`update.sh` handle this correctly by explicitly calling `docker compose build --no-cache` whenever `CLAUDE_SOURCE_PATH` is set (never relying on `up -d` alone). Anyone bypassing the scripts must do the same: `docker compose build --no-cache && docker compose up -d`, or `docker compose up -d --build`. See `docs/docker.md#local-development`.
 - `- ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro` in `volumes:`: the "optional file mount" idiom — mounts the real host token file when `.env`'s `GITHUB_TOKEN_FILE` is set, or a harmless empty `/dev/null` when it's not, so this line is always present and always safe regardless of whether the operator configured a token. Paired with `- GITHUB_TOKEN_FILE=/run/secrets/github_token` in `environment:`, which is a **literal**, not `${GITHUB_TOKEN_FILE:-}` — the container always looks at this fixed convention path; the host-side `.env` value is only ever used for the volume mount source, never passed into the container directly.
+- `- PUID=${PUID:-1000}` / `- PGID=${PGID:-1000}` in `environment:`: read by `entrypoint.sh`'s root step-down block to remap the `node` account before dropping privilege. No corresponding `user:` field is set on the service — the container must start as root (the image's default, see the `Dockerfile` section) for that remap to be possible at all.
 
 **What NOT to change without good reason:**
 - Do not remove `stdin_open` or `tty` (breaks the interface)
@@ -361,10 +382,13 @@ tmux new-session -s main claude --dangerously-skip-permissions
 6. Respect `AUTO_START_MODE` and `CLAUDE_EXTRA_ARGS`
 7. New mandatory-config checks belong in `validate_config()`, called right after the `claude` binary check and before any mutation (symlinks, git config, settings.json) — fail via `fatal()`, not a bare `exit`
 8. `fatal()`'s `sleep infinity` still makes the Dockerfile `HEALTHCHECK` report `unhealthy` (no tmux session was ever created), so `fatal()` touches `FATAL_MARKER_FILE` (default `/tmp/claude-dock-fatal`, overridable for tests) right before parking PID 1. `scripts/watchdog.sh` checks this marker via `docker exec` and skips restarting when it's present — otherwise an external watchdog reacting to that same `unhealthy` status would restart the container every cycle, recreating the exact loop `fatal()` exists to avoid. The marker is `rm -f`'d unconditionally at the top of the script on every run (including a plain `docker restart`, which re-execs this script but keeps the container's writable layer) so a stale marker from a past fatal run never survives into a run that didn't hit `fatal()` again.
+9. The very first block in the file (before even the color variable definitions) is the root step-down: `if [ "$(id -u)" = "0" ]; then ... fi`. It validates `PUID`/`PGID` (rejecting `0` or non-integers via the same `fatal()`-style pattern — plain `echo`+marker+`sleep infinity`, since the real `fatal()` function isn't defined yet at this point in the file), optionally remaps `node` via `usermod`/`groupmod` when they differ from the 1000/1000 default, `chown`s `$HOME` (never a bind mount), then `exec setpriv --reuid=node --regid=node --init-groups /bin/bash "$0" "$@"` to re-run this same script as the now-non-root user — on that second pass `id -u` is no longer `0`, so this block is a no-op and everything below is unaffected. Do not move this block, and do not let anything above it (there is nothing above it on purpose) perform mutations — it's the only root-context code in the file.
 
 **Required flow:**
 ```
-banner → show config → validate claude → validate_config (mode + writable
+root step-down (id -u = 0? remap node to PUID/PGID, chown $HOME, exec
+setpriv into node → re-enter this script as node, skip this block this time)
+→ banner → show config → validate claude → validate_config (mode + writable
 config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 → configure git → settings.json → cd /workspace → determine mode
 → build CMD_ARGS → show info → exec tmux new-session -s main <LAUNCH_BIN> [CMD_ARGS...]
@@ -422,6 +446,8 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 
 **Why pull, not build, by default:** the published image is rebuilt in CI (weekly, and on every push to `main`) with a cache-busting build arg on the `npm install -g @anthropic-ai/claude-code` layer specifically, so it never serves a stale version from the GitHub Actions layer cache — see `.github/workflows/docker-publish.yml`. Pulling that image is faster than rebuilding locally and gets the same freshness guarantee. `--no-cache` remains necessary for the local-build fallback path, for the same cache-staleness reason.
 
+**`:stable` tag (opt-in, manual only):** the weekly cron rebuild and every push to `main` always move `:latest` — by design, so it stays current with new `@anthropic-ai/claude-code` releases without anyone having to remember to update it. That also means `:latest` can, in principle, pick up a `claude` CLI release that breaks something, with no staging step. `docker-publish.yml`'s `workflow_dispatch` accepts a `promote_stable` boolean input (default `false`); when a maintainer runs the workflow manually with it checked, that specific build is additionally tagged and pushed as `:stable` (`type=raw,value=stable,enable=${{ github.event_name == 'workflow_dispatch' && inputs.promote_stable == true }}` in the `Extract metadata` step). `:stable` never moves on its own — only ever via that explicit manual action, after whoever runs it has actually tried the build. Users who want to avoid riding the weekly bump set `CLAUDE_DOCK_IMAGE=ghcr.io/leonardomacedocano/claude-code-dock:stable` in `.env` instead of the default `:latest`.
+
 ---
 
 ### `scripts/backup.sh`
@@ -439,7 +465,7 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 
 **Retention:** Automatically keeps only the 10 most recent backups.
 
-**`.env` masking (`backup_env()`):** two passes. First excludes any line whose *variable name* looks like a secret (`…TOKEN…`, `…KEY…`, `…SECRET…`, `…PASSWORD…`, `…PASSPHRASE…`). Second excludes any line whose *value* is a URL with credentials embedded (`user:pass@host` — e.g. someone setting `GIT_REPO_URL=https://user:ghp_xxx@github.com/...` instead of the recommended separate `GITHUB_TOKEN_FILE`), which the name-based pass alone would miss since `GIT_REPO_URL` doesn't look like a secret-named variable.
+**`.env` masking (`backup_env()`):** two passes. First excludes any line whose *variable name* looks like a secret (`…TOKEN…`, `…KEY…`, `…SECRET…`, `…PASSWORD…`, `…PASSPHRASE…`, `…CREDENTIAL…`, `…AUTH…`, `…CERT…`). Second excludes any line whose *value* is a URL with credentials embedded (`user:pass@host` — e.g. someone setting `GIT_REPO_URL=https://user:ghp_xxx@github.com/...` instead of the recommended separate `GITHUB_TOKEN_FILE`), which the name-based pass alone would miss since `GIT_REPO_URL` doesn't look like a secret-named variable. This is a denylist, not an allowlist — best-effort, not a guarantee; a secret in an unrecognized variable name would slip through. Deliberately excludes `PAT`: it's a substring of `PATH`, and this project already has three load-bearing non-secret vars ending in exactly that suffix (`WORKSPACE_PATH`, `CONFIG_BASE_PATH`, `SHARED_CONFIG_PATH`) that adding it would silently strip from every backup.
 
 **Encryption (`--encrypt`):** Pipes the finished `.tar.gz` through `gpg --symmetric --cipher-algo AES256`, producing a `.tar.gz.gpg` and removing the plaintext archive. Passphrase source, in order: `BACKUP_ENCRYPT_PASSPHRASE` env var (e.g. set in `.env`, non-interactive — for cron use) or an interactive `gpg` prompt if unset. Requires `gpg` on the host (not the container) since backups are host-side files.
 
@@ -461,7 +487,7 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 
 **Responsibility:** Connect to the tmux session where Claude Code is running.
 
-**Uses `docker exec -it ... tmux attach-session -t main`** to attach to the Claude Code session.
+**Uses `docker exec -it --user node ... tmux attach-session -t main`** to attach to the Claude Code session. `--user node` is required, not cosmetic: the image starts as root by default (see Architecture's "Non-root user" section), so a bare `docker exec` would default to root, which can't see the tmux session's socket (owned by `node`, at a UID-specific path under `/tmp`).
 
 **Key distinction:**
 - `./scripts/attach.sh` (tmux attach-session): connects to the running Claude Code session
@@ -473,13 +499,15 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 
 **Responsibility:** Open a debug shell without interfering with the main process.
 
-**Uses `docker exec -it ... bash`** to open a separate bash process (distinct from the Claude tmux session).
+**Uses `docker exec -it --user node ... bash`** to open a separate bash process (distinct from the Claude tmux session), landing as `node` rather than the container's default root, matching this project's non-root-by-default posture for anything that touches the workspace/config.
 
 ---
 
 ### `scripts/claude.sh`
 
 **Responsibility:** Run Claude Code in the container via `docker exec`.
+
+**Uses `docker exec -it --user node ...`** — claude must never run as root (see Architecture's "Non-root user" section); without `--user node` this would default to the container's root user and either fail (Claude Code 2.x refuses `--dangerously-skip-permissions` as root) or create root-owned files in the workspace.
 
 **Useful when:**
 - The container is in `AUTO_START_MODE=shell` and the user wants to run claude manually
@@ -491,6 +519,8 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 ### `scripts/remote.sh`
 
 **Responsibility:** Run Claude Remote Control in the container via `docker exec`.
+
+**Uses `docker exec -it --user node ...`** — same reasoning as `scripts/claude.sh` above: claude must never run as root.
 
 **Useful when:**
 - The user wants a temporary Remote Control session without changing `AUTO_START_MODE`
@@ -521,10 +551,13 @@ Set `AUTO_START_MODE=remote` in `.env`.
 3. Any other status (`healthy`, `starting`, or no healthcheck configured) is a no-op.
 4. Takes the container name as `$1`, defaulting to `${CONTAINER_NAME:-claude-code-dock}` from `.env` like the other scripts.
 
+**Notifications (`notify()`, optional):** if `$WATCHDOG_NTFY_URL` is set (host-side env var or `.env`, never passed into the container), a plain-text `curl -d` POST is sent when the script actually restarts the container, when a restart fails, or when it skips due to the fatal marker. Works as-is with an ntfy.sh topic URL or any webhook accepting a raw POST body. Deliberately silent (no notification) on `healthy`/`starting`/no-healthcheck — those are the expected steady state on every cron tick, and notifying on those would just be noise at cron frequency. Never fails the watchdog run itself: a missing `curl` or an unreachable/erroring URL is swallowed (`|| true`) — a notification failing is not a reason to skip or fail the actual restart logic.
+
 **Must not:**
 - Restart on `starting` (still within `--start-period`) — only `unhealthy` triggers a restart
 - Assume the container has a healthcheck at all — a missing one reports empty status, treated as a no-op, not an error
 - Restart an `unhealthy` container that has the `/tmp/claude-dock-fatal` marker — see behavior #2 above
+- Let a notification failure (missing `curl`, unreachable URL) affect the script's own exit code or skip the restart/skip logic
 
 ---
 
@@ -577,9 +610,9 @@ Claude Code's login process is an official Anthropic authentication flow. Automa
 
 The correct solution is to persist the credentials that Claude Code itself saves after manual authentication. The user logs in once, and the `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` volume preserves those credentials.
 
-### 2. Why non-root user (`node`, UID 1000)?
+### 2. Why non-root user (`node`, UID/GID 1000 by default, remappable via PUID/PGID)?
 
-Claude Code 2.x blocks `--dangerously-skip-permissions` when running as root. Additionally, running as root in containers is a security anti-pattern. UID 1000 is compatible with most NAS systems and Unraid.
+Claude Code 2.x blocks `--dangerously-skip-permissions` when running as root. Additionally, running as root in containers is a security anti-pattern. UID 1000 is compatible with most NAS systems and Unraid; `PUID`/`PGID` exist for the hosts where it isn't, so the container can match the host user instead of requiring a host-side `chown`.
 
 ### 3. Why bind mounts instead of named Docker volumes?
 
@@ -684,7 +717,7 @@ When the user connects for the first time:
 2. **No login automation:** All authentication is performed by the user with Claude Code.
 3. **No exposed ports:** The container does not listen on any network port.
 4. **Isolated credentials:** `configs/` (and the legacy `config/`) excluded from git via `.gitignore`.
-5. **Non-root user:** Container runs as `node` (UID 1000).
+5. **Non-root user:** the actual long-running process (bash/tmux/claude) always runs as `node` (UID/GID 1000 by default, remappable via `PUID`/`PGID`) — the image starts as root only briefly, internally, to perform that remap before dropping privilege; see Architecture's "Non-root user" section.
 6. **Full transparency:** All code is open source and auditable.
 
 ### Attack Surface
@@ -704,7 +737,7 @@ What is NOT exposed:
 
 ## Known Limitations
 
-1. **User node (UID 1000) and volume permissions:** On some NAS or configurations, workspace files may belong to a different UID. Solution: `chown -R 1000:1000 /your/workspace/`.
+1. **User node (UID 1000 by default) and volume permissions:** On some NAS or configurations, workspace files may belong to a different UID. Set `PUID`/`PGID` in `.env` to match that host UID/GID instead of chowning the host directory — `entrypoint.sh` remaps the container's `node` account to match at startup. (`chown -R <PUID>:<PGID> /your/workspace/` is still needed once, on the host, if the directory was already created with different ownership before PUID/PGID were set.)
 
 2. **Remote Control as PID 1:** When `AUTO_START_MODE=remote`, Claude runs inside the tmux "main" session. Connect via `tmux attach-session -t main`. Primarily tested in interactive mode.
 
@@ -728,6 +761,9 @@ What is NOT exposed:
 - [x] `scripts/status.sh` — environment state overview
 - [x] Community Applications template for Unraid (XML) — `unraid/claude-code-dock.xml`, not yet submitted upstream (see `docs/unraid.md#community-applications-template`)
 - [x] GPG encryption support for backups (`scripts/backup.sh --encrypt`)
+- [x] Configurable `PUID`/`PGID` (root step-down via `setpriv`, no more fixed UID 1000)
+- [x] Optional watchdog notification hook (`WATCHDOG_NTFY_URL`)
+- [x] Opt-in `:stable` image tag, promoted manually, independent of the weekly `:latest` rebuild
 
 ### Possible Future Improvements
 
