@@ -127,8 +127,9 @@ REMOTE_SESSION_NAME=my-session
 # Execution mode
 AUTO_START_MODE=interactive
 
-# Auto-approve (recommended for personal server)
-CLAUDE_AUTO_APPROVE=true
+# Auto-approve — false asks for approval before each action (recommended
+# default); set to true only once you trust the workspace this points at.
+CLAUDE_AUTO_APPROVE=false
 
 # Timezone
 TZ=America/New_York
@@ -257,7 +258,7 @@ Click **Add another Path, Port, Variable, Label or Device**:
 | Config Type | Variable |
 | Name | CLAUDE_AUTO_APPROVE |
 | Key | CLAUDE_AUTO_APPROVE |
-| Value | true |
+| Value | false |
 
 **Variable 3:**
 | Field | Value |

@@ -28,10 +28,10 @@ if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
         CONFIG_BASE_PATH="${PROJECT_DIR}/${CONFIG_BASE_PATH#./}"
     fi
     CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
-    BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
+    BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz*"
 else
     CONFIG_DIR="${PROJECT_DIR}/configs/default"
-    BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
+    BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz*"
 fi
 
 header() {
@@ -185,5 +185,8 @@ if [ "${CONTAINER_STATUS}" = "running" ]; then
     echo -e "  Shell:   ${BOLD}./scripts/shell.sh${RESET}"
     echo -e "  Logs:    ${BOLD}./scripts/logs.sh${RESET}"
     echo -e "  Backup:  ${BOLD}./scripts/backup.sh${RESET}"
+    if [ "${CONTAINER_HEALTH}" = "unhealthy" ]; then
+        echo -e "  ${RED}Container reports unhealthy${RESET} — restart it: ${BOLD}./scripts/watchdog.sh ${CONTAINER_NAME}${RESET}"
+    fi
     echo ""
 fi

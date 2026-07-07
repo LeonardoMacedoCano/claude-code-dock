@@ -37,6 +37,15 @@ teardown() {
   [ ! -f "$SETTINGS_FILE" ]
 }
 
+@test "does not create settings.json when CLAUDE_AUTO_APPROVE is unset (new default)" {
+  unset CLAUDE_AUTO_APPROVE
+
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+
+  [ ! -f "$SETTINGS_FILE" ]
+}
+
 @test "adds skipDangerousModePermissionPrompt to existing settings.json via jq" {
   if ! command -v jq &>/dev/null; then
     skip "jq not available"

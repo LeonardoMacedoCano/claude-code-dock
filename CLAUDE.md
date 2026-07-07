@@ -35,35 +35,39 @@ Before executing any GitHub-related task, verify that the following are actually
 |----------|-------------|
 | `GIT_USER_NAME` | Commit authorship |
 | `GIT_USER_EMAIL` | Commit authorship |
-| `GITHUB_TOKEN` | Push, pull from private repos, any authenticated operation |
+| `GITHUB_TOKEN_FILE` | Push, pull from private repos, any authenticated operation |
 | `GIT_REPO_URL` | Auto-clone on startup |
 
-**A literal `.env` file is not the only valid source and must not be treated as the source of truth.** These variables can just as validly arrive as real process environment variables — exported by the shell that ran `docker compose up`, injected via `environment:`/`env_file:` in `docker-compose.yml`, or passed with `docker run -e`. Checking only `test -f .env` / `grep .env` gives false negatives (see incident: a user had configured everything via process env vars with no `.env` file on disk at all; concluding "not configured" from the missing file alone was wrong).
+**A literal `.env` file is not the only valid source and must not be treated as the source of truth.** `GIT_USER_NAME`, `GIT_USER_EMAIL`, and `GIT_REPO_URL` can just as validly arrive as real process environment variables — exported by the shell that ran `docker compose up`, injected via `environment:`/`env_file:` in `docker-compose.yml`, or passed with `docker run -e`. Checking only `test -f .env` / `grep .env` gives false negatives (see incident: a user had configured everything via process env vars with no `.env` file on disk at all; concluding "not configured" from the missing file alone was wrong).
+
+**`GITHUB_TOKEN_FILE` is a special case — its env var presence is NOT a useful signal.** Inside the running container, `GITHUB_TOKEN_FILE` is always set to the fixed convention path `/run/secrets/github_token` (see `docker-compose.yml` and `docker/entrypoint.sh`), whether or not the operator actually configured a real token — `docker-compose.yml` mounts either the real host file there, or a harmless empty `/dev/null` when `.env`'s `GITHUB_TOKEN_FILE` is unset. So `[ -n "${GITHUB_TOKEN_FILE:-}" ]` is true either way and tells you nothing. Check the *effect* instead.
 
 **Correct way to check — in this order, and only using presence tests, never printing values:**
-1. Process environment, presence only: `[ -n "${GIT_USER_NAME:-}" ]`, `[ -n "${GIT_USER_EMAIL:-}" ]`, `[ -n "${GITHUB_TOKEN:-}" ]`, `[ -n "${GIT_REPO_URL:-}" ]`.
+1. Process environment, presence only, for the non-token vars: `[ -n "${GIT_USER_NAME:-}" ]`, `[ -n "${GIT_USER_EMAIL:-}" ]`, `[ -n "${GIT_REPO_URL:-}" ]`.
 2. Effect already applied by `entrypoint.sh`, which is safe to print because it's not secret: `git config --global user.name`, `git config --global user.email`.
-3. Whether the token was actually installed, existence only, never contents: `test -f ~/.git-credentials`.
-4. Only if none of the above resolve it, fall back to checking a `.env` file on disk — and even then, test for the key's presence (`grep -q '^GITHUB_TOKEN=.\+' .env`), don't `cat`/print the file.
+3. Whether a real token was actually mounted and non-empty, size only, never contents: `test -s /run/secrets/github_token` (a `test -f` alone isn't enough — the no-op `/dev/null` mount also passes `-f`-adjacent checks as a special file but is empty; `-s` requires actual bytes).
+4. Whether the token was actually installed into git, existence only, never contents: `test -f ~/.git-credentials`.
+5. Only if none of the above resolve it, fall back to checking `.env` on disk for `GIT_USER_NAME`/`GIT_USER_EMAIL`/`GIT_REPO_URL` — and even then, test for the key's presence, don't `cat`/print the file. For the token, check `grep -q '^GITHUB_TOKEN_FILE=.\+' .env` (presence of the *path* setting, not the secret itself).
 
 **Never do any of the following, even just to "double-check" a value is set:**
-- `echo "$GITHUB_TOKEN"`, `printenv GITHUB_TOKEN`, `cat ~/.git-credentials`, or any command whose output could include the token itself.
-- A shell one-liner that looks like it redacts a secret but doesn't in every branch. Example of what actually leaked a live token once: `` echo "${GITHUB_TOKEN:+<set, redacted>}${GITHUB_TOKEN:-<unset>}" `` — the second expansion (`:-`) still substitutes the *real value* whenever the variable is set and non-empty, because `:-` only falls back on unset/empty. If you need to show "is this set?", use a boolean test (`[ -n "$VAR" ] && echo set || echo unset`) and never interpolate the secret's own expansion into the string, redacted-looking or not.
-- Piping/grepping a file that might contain the token (`.env`, `~/.git-credentials`) through anything that echoes matched lines, unless the pattern only matches the variable *name*, not its value.
+- `cat /run/secrets/github_token`, `cat ~/.git-credentials`, or any command whose output could include the token itself.
+- A shell one-liner that looks like it redacts a secret but doesn't in every branch. Example of the failure mode, generalized from a past incident with a different var: `` echo "${VAR:+<set, redacted>}${VAR:-<unset>}" `` — the second expansion (`:-`) still substitutes the *real value* whenever the variable is set and non-empty, because `:-` only falls back on unset/empty. If you need to show "is this set?", use a boolean test (`[ -n "$VAR" ] && echo set || echo unset`) and never interpolate the secret's own expansion into the string, redacted-looking or not.
+- Piping/grepping a file that might contain the token (`.env`, `~/.git-credentials`, `/run/secrets/github_token`) through anything that echoes matched lines, unless the pattern only matches a variable *name*, not its value.
 
-**If any required variable is missing or empty** (confirmed via the safe checks above), stop and inform the user. Do not proceed with the operation. Explain which variable is missing and how to configure it — as an env var or in `.env`, whichever the user is already using:
+**If any required variable is missing or empty** (confirmed via the safe checks above), stop and inform the user. Do not proceed with the operation. Explain which variable is missing and how to configure it:
 
 ```
-GITHUB_TOKEN is not set (checked: process environment, git config, ~/.git-credentials, .env).
+No GitHub token is mounted (checked: /run/secrets/github_token is empty, ~/.git-credentials absent).
 Without it, git push/pull to GitHub will fail.
 
 To configure it:
 1. Go to https://github.com/settings/tokens → "Generate new token (classic)"
 2. Name it (e.g. claude-code-dock), select scope "repo", generate and copy
-3. Set it either as an environment variable for the container, or add it to
-   your .env file:
-   GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-4. Restart the container: docker compose restart
+3. Save it to a file ON THE HOST (not in .env), e.g.:
+   echo -n "ghp_xxxxxxxxxxxxxxxxxxxx" > /srv/claude-secrets/github_token
+   chmod 600 /srv/claude-secrets/github_token
+4. Point .env at it: GITHUB_TOKEN_FILE=/srv/claude-secrets/github_token
+5. Recreate the container: docker compose up -d --force-recreate
 ```
 
 Apply the same pattern for `GIT_USER_NAME` and `GIT_USER_EMAIL`:
@@ -101,16 +105,16 @@ git remote set-url origin https://github.com/USER/REPO.git
 
 ### 3. Checklist before any GitHub operation
 
-Check via the safe methods in section 1 — process env presence test, `git config --global`, `test -f ~/.git-credentials` — not by printing or catting anything:
+Check via the safe methods in section 1 — process env presence test (for the non-token vars), `git config --global`, `test -s /run/secrets/github_token`, `test -f ~/.git-credentials` — not by printing or catting anything:
 
 ```
 [ ] GIT_USER_NAME resolvable (env var or git config --global user.name)?
 [ ] GIT_USER_EMAIL resolvable (env var or git config --global user.email)?
-[ ] GITHUB_TOKEN present (env var set, or ~/.git-credentials exists) — required for push/pull?
+[ ] GitHub token present (test -s /run/secrets/github_token, or ~/.git-credentials exists) — required for push/pull?
 [ ] Remote URL is HTTPS (not SSH)?
 ```
 
-If any item is missing, inform the user and pause. Never silently skip a check or attempt to work around a missing credential. Never print or echo the value of `GITHUB_TOKEN` (or any file that contains it) while performing this checklist.
+If any item is missing, inform the user and pause. Never silently skip a check or attempt to work around a missing credential. Never print or echo the value of the token (or any file that contains it) while performing this checklist.
 
 ---
 
@@ -199,8 +203,9 @@ volumes:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AUTO_START_MODE` | `interactive` | Execution mode: `interactive`, `remote`, `shell` |
-| `CLAUDE_AUTO_APPROVE` | `true` | Enables `--dangerously-skip-permissions` (interactive mode) |
-| `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command |
+| `CLAUDE_AUTO_APPROVE` | `false` | Enables `--dangerously-skip-permissions` (interactive/remote modes) |
+| `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command. Parsed with quote-aware splitting (`eval`-based), so a quoted substring with spaces survives as one argument |
+| `GITHUB_TOKEN_FILE` | `` | HOST path to a file holding the GitHub token — `docker-compose.yml` auto-mounts it read-only to the fixed in-container path `/run/secrets/github_token` |
 | `CLAUDE_DOCK_IMAGE` | `ghcr.io/leonardomacedocano/claude-code-dock:latest` | Prebuilt image `docker compose pull` fetches by default |
 | `CLAUDE_DOCK_VERSION` | `main` | Branch/tag to build from when not pulling the prebuilt image (build context ref) |
 | `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to use as build context instead of pulling/GitHub (advanced/dev use). Highest priority when set — always wins, `install.sh`/`update.sh` force `--no-cache` |
@@ -330,6 +335,7 @@ tmux new-session -s main claude --dangerously-skip-permissions
 - `container_name: ${CONTAINER_NAME:-claude-code-dock}`: name driven by `.env`; scripts depend on a stable, known name
 - `image: ${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest}` + `build:`: both present intentionally — `image:` is what `docker compose pull` (the default install/update path) fetches; `build:` is the fallback path used when `CLAUDE_SOURCE_PATH` is set or someone explicitly runs `docker compose build`. `build.args` also passes `CLAUDE_DOCK_SOURCE_PATH` (raw `CLAUDE_SOURCE_PATH`) and `CLAUDE_DOCK_VERSION` through so the Dockerfile can bake which one was used into `/etc/claude-dock-build-source` — read by `entrypoint.sh`'s startup log and `scripts/status.sh`.
 - Because `image:` + `build:` coexist, Compose only builds when the tag isn't already present locally — a bare `docker compose up -d` will NOT rebuild an already-tagged image, even with `CLAUDE_SOURCE_PATH` set. `install.sh`/`update.sh` handle this correctly by explicitly calling `docker compose build --no-cache` whenever `CLAUDE_SOURCE_PATH` is set (never relying on `up -d` alone). Anyone bypassing the scripts must do the same: `docker compose build --no-cache && docker compose up -d`, or `docker compose up -d --build`. See `docs/docker.md#local-development`.
+- `- ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro` in `volumes:`: the "optional file mount" idiom — mounts the real host token file when `.env`'s `GITHUB_TOKEN_FILE` is set, or a harmless empty `/dev/null` when it's not, so this line is always present and always safe regardless of whether the operator configured a token. Paired with `- GITHUB_TOKEN_FILE=/run/secrets/github_token` in `environment:`, which is a **literal**, not `${GITHUB_TOKEN_FILE:-}` — the container always looks at this fixed convention path; the host-side `.env` value is only ever used for the volume mount source, never passed into the container directly.
 
 **What NOT to change without good reason:**
 - Do not remove `stdin_open` or `tty` (breaks the interface)
@@ -337,6 +343,8 @@ tmux new-session -s main claude --dangerously-skip-permissions
 - Do not change the `container_name` default or remove the `CONTAINER_NAME` variable (breaks all scripts when the variable is unset)
 - Do not remove `image:` in favor of `build:`-only (breaks the pull-first fast path in `install.sh`/`update.sh`) or vice versa (breaks `CLAUDE_SOURCE_PATH`-based local dev)
 - Do not make `CLAUDE_SOURCE_PATH` local builds rely on Docker's layer cache or on an image tag already being absent — always force `--no-cache` in scripts, since `CLAUDE_SOURCE_PATH` must deterministically win with zero cache dependency
+- Do not change the `GITHUB_TOKEN_FILE` `environment:` line to interpolate `${GITHUB_TOKEN_FILE:-}` (the host value) instead of the literal `/run/secrets/github_token` — that would leak the *host path* into the container's env (harmless but pointless) and, worse, break `entrypoint.sh`'s assumption that this env var always points at the mount target
+- Do not reintroduce a raw inline-secret env var for the GitHub token — the whole point of the file-mount design is that the token's value never sits in `.env`, in this file, or in the container's process environment
 
 ---
 
@@ -428,6 +436,8 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 
 **Retention:** Automatically keeps only the 10 most recent backups.
 
+**Encryption (`--encrypt`):** Pipes the finished `.tar.gz` through `gpg --symmetric --cipher-algo AES256`, producing a `.tar.gz.gpg` and removing the plaintext archive. Passphrase source, in order: `BACKUP_ENCRYPT_PASSPHRASE` env var (e.g. set in `.env`, non-interactive — for cron use) or an interactive `gpg` prompt if unset. Requires `gpg` on the host (not the container) since backups are host-side files.
+
 ---
 
 ### `scripts/restore.sh`
@@ -494,6 +504,23 @@ Set `AUTO_START_MODE=remote` in `.env`.
 
 ---
 
+### `scripts/watchdog.sh`
+
+**Responsibility:** Restart a container that Docker has marked `unhealthy` per the Dockerfile `HEALTHCHECK` (tmux session missing/pane dead, or PID 1 not bash in shell mode).
+
+**Why this exists:** `restart: unless-stopped` only reacts to the container *exiting* — Docker never auto-restarts a container that is still running but reports `unhealthy` (e.g. a wedged tmux pane where nothing has actually crashed). This script closes that gap by being run periodically from the *host* (cron), outside the container it's watching.
+
+**Behavior:**
+1. Reads `Health.Status` via `docker inspect --format '{{.State.Health.Status}}' <container>`.
+2. If `unhealthy`, runs `docker restart <container>` and logs it; any other status (`healthy`, `starting`, or no healthcheck configured) is a no-op.
+3. Takes the container name as `$1`, defaulting to `${CONTAINER_NAME:-claude-code-dock}` from `.env` like the other scripts.
+
+**Must not:**
+- Restart on `starting` (still within `--start-period`) — only `unhealthy` triggers a restart
+- Assume the container has a healthcheck at all — a missing one reports empty status, treated as a no-op, not an error
+
+---
+
 ## Conventions
 
 ### Environment Variables
@@ -501,10 +528,11 @@ Set `AUTO_START_MODE=remote` in `.env`.
 - `WORKSPACE_PATH`: path to the workspace on the host
 - `CONFIG_BASE_PATH` / `REMOTE_SESSION_NAME`: base dir + session ID; credentials live at `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` on the host
 - `AUTO_START_MODE`: execution mode (interactive/remote/shell) — validated at container startup by `validate_config()` in `entrypoint.sh`
-- `CLAUDE_AUTO_APPROVE`: enables --dangerously-skip-permissions
-- `CLAUDE_EXTRA_ARGS`: extra arguments for claude
+- `CLAUDE_AUTO_APPROVE`: enables --dangerously-skip-permissions (default `false`)
+- `CLAUDE_EXTRA_ARGS`: extra arguments for claude (quote-aware parsing)
 - `TZ`: timezone
 - `GIT_USER_NAME` / `GIT_USER_EMAIL`: optional Git configuration
+- `GITHUB_TOKEN_FILE`: HOST path to a file with the GitHub PAT, auto-mounted read-only to `/run/secrets/github_token`
 
 ### File and Directory Naming
 
@@ -675,7 +703,7 @@ What is NOT exposed:
 
 3. **Shell mode and restart policy:** With `AUTO_START_MODE=shell`, the container restarts after the user types `exit` from bash (restart: unless-stopped). This is expected behavior.
 
-4. **CLAUDE_EXTRA_ARGS parsing:** The variable is read with `read -ra` (split by spaces). Arguments with internal spaces are not supported. Use only simple arguments.
+4. **CLAUDE_EXTRA_ARGS parsing:** The variable is parsed with quote-aware splitting (`eval`-based, see `docker/entrypoint.sh`), so a quoted substring survives as a single argument (e.g. `CLAUDE_EXTRA_ARGS=--append-system-prompt "be terse"`). Since it goes through `eval`, treat it like any other operator-controlled config value — it is not a place to interpolate untrusted input.
 
 ---
 
@@ -686,26 +714,25 @@ What is NOT exposed:
 - [x] Dockerfile with Claude Code (node user, non-root)
 - [x] docker-compose.yml with persistent volumes
 - [x] Three execution modes (interactive/remote/shell)
-- [x] Management scripts (install, update, backup, restore, attach, shell, logs, claude, remote)
-- [x] AUTO_START_MODE, CLAUDE_AUTO_APPROVE, CLAUDE_EXTRA_ARGS variables
+- [x] Management scripts (install, update, backup, restore, attach, shell, logs, claude, remote, status, watchdog, new-session, session-up, sessions)
+- [x] AUTO_START_MODE, CLAUDE_AUTO_APPROVE, CLAUDE_EXTRA_ARGS, GITHUB_TOKEN_FILE variables
 - [x] Complete documentation (Docker, Unraid, Troubleshooting, Security, Architecture)
+- [x] Dockerfile `HEALTHCHECK` + `scripts/watchdog.sh` for external monitoring/auto-restart on `unhealthy`
+- [x] `scripts/status.sh` — environment state overview
+- [x] Community Applications template for Unraid (XML) — `unraid/claude-code-dock.xml`, not yet submitted upstream (see `docs/unraid.md#community-applications-template`)
+- [x] GPG encryption support for backups (`scripts/backup.sh --encrypt`)
 
 ### Possible Future Improvements
 
 **Infrastructure:**
-- Health check script for external monitoring
-- Community Applications template for Unraid (XML)
 - Multi-user support via separate instances
 - Watchtower integration for automatic updates
+- Submit the Unraid template to the Community Applications feed (needs a hosted 128x128 icon)
 
 **Documentation:**
 - Synology DSM guide with screenshots
 - TrueNAS Scale guide
 - Tailscale configuration examples
-
-**Scripts:**
-- `scripts/status.sh` — environment state overview
-- GPG encryption support for backups
 
 ---
 

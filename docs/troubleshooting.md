@@ -169,6 +169,32 @@ docker run --rm -it \
 
 ---
 
+### Container is "Up" and running, but Claude Code is unresponsive (marked `unhealthy`)
+
+**Symptom:**
+```
+NAME               STATUS
+claude-code-dock   Up 2 hours (unhealthy)
+```
+
+**Cause:** The Dockerfile's `HEALTHCHECK` failed (tmux session gone, or its pane is dead — e.g. a crashed `claude` process left the pane behind). `restart: unless-stopped` does **not** react to this on its own — it only restarts on the container actually exiting, and an `unhealthy` container is still running from Docker's point of view.
+
+**Solution — restart it manually, or use the watchdog script:**
+```bash
+# One-off
+docker restart claude-code-dock
+
+# Or, checks health and restarts only if unhealthy (safe to run anytime)
+./scripts/watchdog.sh
+```
+
+**Automate it** by running the watchdog from the host's cron, so an unhealthy container gets fixed without you noticing:
+```cron
+*/5 * * * * /path/to/claude-code-dock/scripts/watchdog.sh >> /path/to/claude-code-dock/watchdog.log 2>&1
+```
+
+---
+
 ## Connection Problems
 
 ### `attach.sh` does not connect or tmux session not found

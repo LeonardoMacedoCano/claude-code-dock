@@ -22,6 +22,15 @@ teardown() {
   grep -q "^claude$" "$TEST_TMPDIR/tmux_args"
 }
 
+@test "interactive mode: no --dangerously-skip-permissions when CLAUDE_AUTO_APPROVE is unset (new default)" {
+  unset CLAUDE_AUTO_APPROVE
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+  [ -f "$TEST_TMPDIR/tmux_args" ]
+  run grep "^--dangerously-skip-permissions$" "$TEST_TMPDIR/tmux_args"
+  [ "$status" -ne 0 ]
+}
+
 @test "interactive mode: --dangerously-skip-permissions when CLAUDE_AUTO_APPROVE=true" {
   export CLAUDE_AUTO_APPROVE="true"
   run bash "$ENTRYPOINT"
@@ -86,6 +95,23 @@ teardown() {
   [ "$status" -eq 0 ]
   grep -q "^--verbose$" "$TEST_TMPDIR/tmux_args"
   grep -q "^--debug$"   "$TEST_TMPDIR/tmux_args"
+}
+
+@test "CLAUDE_EXTRA_ARGS preserves a quoted substring with spaces as one argument" {
+  export CLAUDE_EXTRA_ARGS='--append-system-prompt "be terse" --verbose'
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+  grep -q "^--append-system-prompt$" "$TEST_TMPDIR/tmux_args"
+  grep -q "^be terse$"               "$TEST_TMPDIR/tmux_args"
+  grep -q "^--verbose$"              "$TEST_TMPDIR/tmux_args"
+}
+
+@test "CLAUDE_EXTRA_ARGS with unbalanced quotes falls back to plain whitespace splitting instead of crashing" {
+  export CLAUDE_EXTRA_ARGS='--verbose "unterminated'
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"unbalanced quotes"* ]]
+  grep -q "^--verbose$" "$TEST_TMPDIR/tmux_args"
 }
 
 @test "tmux session is always named 'main'" {

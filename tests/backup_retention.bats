@@ -96,8 +96,8 @@ _create_old_backups() {
   [ -n "$ARCHIVE" ]
 }
 
-@test "excludes GITHUB_TOKEN and CLAUDE_API_KEY from .env backup" {
-  printf 'GITHUB_TOKEN=ghp_secret\nCLAUDE_API_KEY=sk-secret\nTZ=UTC\nCONFIG_BASE_PATH=./configs\nREMOTE_SESSION_NAME=%s\n' "$SESSION" > "$TMP_PROJECT/.env"
+@test "excludes secret-looking variables (TOKEN/KEY/SECRET/PASSWORD/PASSPHRASE) from .env backup" {
+  printf 'SOME_SERVICE_TOKEN=ghp_secret\nEXAMPLE_API_KEY=sk-secret\nSOME_SECRET=s3cr3t\nSOME_PASSWORD=hunter2\nSOME_PASSPHRASE=letmein\nTZ=UTC\nCONFIG_BASE_PATH=./configs\nREMOTE_SESSION_NAME=%s\n' "$SESSION" > "$TMP_PROJECT/.env"
 
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
@@ -108,8 +108,9 @@ _create_old_backups() {
   EXTRACT_DIR="$(mktemp -d)"
   tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR" .env.backup 2>/dev/null
   [ -f "$EXTRACT_DIR/.env.backup" ]
-  run grep -E "^(GITHUB_TOKEN|CLAUDE_API_KEY)=" "$EXTRACT_DIR/.env.backup"
+  run grep -E "^(SOME_SERVICE_TOKEN|EXAMPLE_API_KEY|SOME_SECRET|SOME_PASSWORD|SOME_PASSPHRASE)=" "$EXTRACT_DIR/.env.backup"
   [ "$status" -ne 0 ]
+  grep -q "^TZ=UTC" "$EXTRACT_DIR/.env.backup"
   rm -rf "$EXTRACT_DIR"
 }
 

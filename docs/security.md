@@ -49,22 +49,43 @@ chmod 600 "${CONFIG_DIR}"/* 2>/dev/null || true
 ls -la "${CONFIG_DIR}"
 ```
 
-**3. Encrypted backups:**
+**3. Encrypted backups (recommended, especially for offsite/NAS destinations):**
+
+`scripts/backup.sh` supports encryption natively — no manual `gpg` piping needed:
 
 ```bash
-# Create encrypted backup with GPG
-./scripts/backup.sh --output /tmp/backup-temp/
-gpg --symmetric --cipher-algo AES256 \
-    /tmp/backup-temp/claude-code-dock-backup-*.tar.gz
+# Prompts for a passphrase interactively (GPG symmetric, AES256)
+./scripts/backup.sh --encrypt
 
-# Move encrypted backup to a safe location
-mv /tmp/backup-temp/*.gpg /mnt/user/backups/
-rm -rf /tmp/backup-temp/
+# Non-interactive (e.g. from cron): set a passphrase via env or .env
+BACKUP_ENCRYPT_PASSPHRASE='your-strong-passphrase' ./scripts/backup.sh --encrypt
 ```
+
+This produces `claude-code-dock-backup-*.tar.gz.gpg` instead of the plaintext archive. Restore with:
+
+```bash
+gpg --decrypt claude-code-dock-backup-2024-01-01_12-00-00.tar.gz.gpg > backup.tar.gz
+./scripts/restore.sh backup.tar.gz
+```
+
+Requires `gpg` on the host running the backup script (not inside the container).
 
 **4. Never share the config directory:**
 
 Anyone with access to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` can use your Claude Code credentials.
+
+**5. Known limitation — env vars are visible via the Docker daemon:**
+
+Any value passed through `environment:` in `docker-compose.yml` is stored in plain text in the container's process environment. Anyone with access to the Docker daemon on this host can read it with:
+
+```bash
+docker inspect claude-code-dock --format '{{.Config.Env}}'
+docker exec claude-code-dock env
+```
+
+This is not a bug specific to claude-code-dock — it's how container env vars work in Docker generally. It matches this project's threat model (single trusted user/host, see below), but it does mean "anyone who can run `docker` commands on this host" is inside the trust boundary, same as anyone who can read `.env` on disk.
+
+The GitHub token specifically avoids this: `GITHUB_TOKEN_FILE` in `.env` holds a *host path*, not the token itself, and `docker-compose.yml` mounts that file, read-only, at the fixed in-container path `/run/secrets/github_token` — so the token's value is never in `.env`, never in a `docker-compose.yml environment:` line, and never in `docker inspect --format '{{.Config.Env}}'` output. It narrows *where the token sits at rest*, not the daemon-access trust boundary above: `docker exec claude-code-dock cat /run/secrets/github_token` still reads it, same as any other bind-mounted file.
 
 ---
 
@@ -264,8 +285,10 @@ trivy image claude-code-dock_claude-code-dock
 [ ] .env is in .gitignore
 [ ] No Docker ports are exposed
 [ ] Server access is via SSH with public key
-[ ] Backups of the config directory are stored securely
+[ ] Backups of the config directory are stored securely (prefer scripts/backup.sh --encrypt)
 [ ] The server is not directly exposed to the internet
 [ ] VPN configured for external access (if needed)
 [ ] Container runs as node user (not root) -- verify with: docker exec claude-code-dock whoami
+[ ] CLAUDE_AUTO_APPROVE is false unless you've deliberately decided to trust this workspace
+[ ] Anyone with `docker` access to this host is treated as trusted (env vars are readable via docker inspect/exec; the mounted GITHUB_TOKEN_FILE content is readable via docker exec)
 ```

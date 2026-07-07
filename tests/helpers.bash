@@ -25,7 +25,10 @@ setup_entrypoint_env() {
   export TZ=""
   export GIT_USER_NAME=""
   export GIT_USER_EMAIL=""
-  export GITHUB_TOKEN=""
+  # Guaranteed-nonexistent path, not the real default (/run/secrets/github_token)
+  # -- keeps tests hermetic regardless of what happens to exist on the host
+  # actually running the suite, and matches the "no token mounted" state.
+  export GITHUB_TOKEN_FILE="$TEST_TMPDIR/no-github-token-file-by-default"
   export GIT_REPO_URL=""
 
   _mock_claude

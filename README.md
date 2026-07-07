@@ -47,6 +47,27 @@ One server can run any number of containers, each with its own project and sessi
 
 ---
 
+## One Container or Many? Pick Your Workflow
+
+Two ways to run claude-code-dock, both valid — pick based on how many projects you're pointing it at:
+
+**A. Just one project → plain `docker-compose.yml` + `.env` (the [Setup](#setup) walkthrough below).**
+Each new project is a new folder with its own `docker-compose.yml`/`.env` copy, started with plain `docker compose up -d`. Simple, explicit, no extra tooling to learn.
+
+**B. Several projects from one clone → the session scripts (`new-session.sh` / `session-up.sh` / `sessions.sh`).**
+Instead of copying the whole project directory per container, one clone of claude-code-dock manages N containers, each bound to its own `.env.<name>` file and its own Compose project name (so `docker compose` commands never accidentally target the wrong session):
+
+```bash
+./scripts/new-session.sh homepage    # creates .env.homepage from .env/.env.example
+nano .env.homepage                   # set WORKSPACE_PATH, REMOTE_SESSION_NAME, etc.
+./scripts/session-up.sh homepage     # docker compose --env-file .env.homepage -p claude-homepage up -d
+./scripts/sessions.sh                # lists every claude-code-dock container and its status
+```
+
+Reach for **B** once you're managing more than two or three projects — it keeps each session's `.env` file and Compose project isolated without you needing to remember which folder belongs to which container. Both workflows produce the same kind of container and can coexist on the same host; they're just two ways of generating the same `docker-compose.yml` + `.env` inputs.
+
+---
+
 ## Setup
 
 No local clone of this repository is required — `docker compose pull` fetches the prebuilt, CI-published image directly from GHCR. You only need two files on your server: `docker-compose.yml` and `.env`.
@@ -69,13 +90,13 @@ CONTAINER_NAME=claude-code-dock-homepage
 CONFIG_BASE_PATH=/srv/claude-config
 WORKSPACE_PATH=/srv/www/homepage
 AUTO_START_MODE=remote
-CLAUDE_AUTO_APPROVE=true
+CLAUDE_AUTO_APPROVE=false
 REMOTE_SESSION_NAME=HomePage
 CLAUDE_EXTRA_ARGS=
 TZ=America/Sao_Paulo
 GIT_USER_NAME=Your Name
 GIT_USER_EMAIL=you@email.com
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+GITHUB_TOKEN_FILE=/srv/claude-secrets/github_token
 GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ```
 
@@ -115,26 +136,37 @@ For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PAT
 | `REMOTE_SESSION_NAME` | `` | Unique session ID — credentials stored at `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` |
 | `WORKSPACE_PATH` | `./workspaces` | This container's project folder |
 | `AUTO_START_MODE` | `interactive` | `interactive`, `remote`, or `shell` |
-| `CLAUDE_AUTO_APPROVE` | `true` | Enables `--dangerously-skip-permissions` |
-| `CLAUDE_EXTRA_ARGS` | `` | Extra arguments passed to Claude |
+| `CLAUDE_AUTO_APPROVE` | `false` | Enables `--dangerously-skip-permissions` — only turn on once you trust the workspace |
+| `CLAUDE_EXTRA_ARGS` | `` | Extra arguments passed to Claude — quoted substrings with spaces are now supported, e.g. `--append-system-prompt "be terse"` |
 | `TZ` | `UTC` | Container timezone |
 | `GIT_USER_NAME` | `` | Name for git commit authorship |
 | `GIT_USER_EMAIL` | `` | Email for git commit authorship |
-| `GITHUB_TOKEN` | `` | GitHub PAT for push/pull authentication |
+| `GITHUB_TOKEN_FILE` | `` | HOST path to a file holding your GitHub PAT — auto-mounted into the container, no manual volume editing needed |
 | `GIT_REPO_URL` | `` | HTTPS URL of repo to auto-clone into `/workspace` on first start |
 
 ---
 
 ## Git & GitHub
 
-`GIT_USER_NAME` and `GIT_USER_EMAIL` set your commit identity inside the container. `GITHUB_TOKEN` authenticates push/pull to GitHub — without it, `git push` fails.
+`GIT_USER_NAME` and `GIT_USER_EMAIL` set your commit identity inside the container. `GITHUB_TOKEN_FILE` authenticates push/pull to GitHub — without it, `git push` fails (public repos and read-only clones still work).
 
-**How to create a token:**
-1. Go to [github.com/settings/tokens](https://github.com/settings/tokens) → **Generate new token (classic)**
-2. Name it (e.g. `claude-code-dock`), select scope **`repo`**, generate and copy
-3. Add to `.env`: `GITHUB_TOKEN=ghp_xxx...`
+**Setup:**
+1. Create a token: [github.com/settings/tokens](https://github.com/settings/tokens) → **Generate new token (classic)** → name it (e.g. `claude-code-dock`) → scope **`repo`** → generate and copy.
+2. Save it to a file **on the host** (not in `.env`):
+   ```bash
+   mkdir -p /srv/claude-secrets
+   echo -n "ghp_xxx..." > /srv/claude-secrets/github_token
+   chmod 600 /srv/claude-secrets/github_token
+   ```
+3. Point `.env` at it:
+   ```env
+   GITHUB_TOKEN_FILE=/srv/claude-secrets/github_token
+   ```
+4. `docker compose up -d` (or `--force-recreate` if the container is already running).
 
-The token is configured on every container start from `.env` — no manual credential commands needed. Never commit `.env` to git (it is already in `.gitignore`).
+`docker-compose.yml` mounts that file automatically, read-only, into the container — no volume editing, no manual credential commands. Leave `GITHUB_TOKEN_FILE` empty to skip GitHub auth entirely; the compose file mounts a harmless `/dev/null` in that case, so nothing breaks either way.
+
+**Note:** the token's value never sits in `.env`, a `docker-compose.yml environment:` line, or the host shell's process environment — only the file path does. The file's *content* is still readable via `docker exec <container> cat /run/secrets/github_token` by anyone with Docker daemon access on this host, same trust boundary as any other bind-mounted file. See [Security](docs/security.md#credential-protection) for the full threat model.
 
 ### Auto-clone on startup
 
@@ -144,7 +176,7 @@ Set `GIT_REPO_URL` to an HTTPS URL and the container clones the repository into 
 GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ```
 
-> **HTTPS only.** SSH URLs (`git@github.com:...`) are not supported — the container has no SSH keys. Always use the `https://` form. Private repos require `GITHUB_TOKEN`.
+> **HTTPS only.** SSH URLs (`git@github.com:...`) are not supported — the container has no SSH keys. Always use the `https://` form. Private repos require `GITHUB_TOKEN_FILE`.
 
 ---
 
@@ -169,8 +201,9 @@ GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ./scripts/shell.sh        # Open a separate bash shell in the container
 ./scripts/logs.sh         # Stream container logs (--app for the persistent startup log)
 ./scripts/status.sh       # Show status, credentials, workspace, and backups for a session
+./scripts/watchdog.sh     # Restart the container if Docker reports it unhealthy (run via cron)
 ./scripts/update.sh       # Pull latest Claude Code image (or rebuild if CLAUDE_SOURCE_PATH is set), restart
-./scripts/backup.sh       # Backup credentials and workspace
+./scripts/backup.sh       # Backup credentials and workspace (--encrypt for GPG AES256)
 ./scripts/restore.sh      # Restore from a backup
 ./scripts/claude.sh       # Run Claude via docker exec (separate session)
 ./scripts/remote.sh       # Temporary Remote Control session via docker exec
@@ -187,7 +220,8 @@ GIT_REPO_URL=https://github.com/your-user/your-repo.git
 | Session not in Remote Control | Check `AUTO_START_MODE=remote` and `REMOTE_SESSION_NAME` |
 | Asks for login on every restart | Verify `CONFIG_BASE_PATH` is the same value across all containers |
 | Remote Control session frozen | SSH → `docker exec -it <name> tmux attach-session -t main` → unblock |
-| `git push` fails | Set `GITHUB_TOKEN` in `.env` |
+| Container running but reports `unhealthy` and `restart: unless-stopped` never kicks in | Docker only auto-restarts on exit, not on `unhealthy` — run `./scripts/watchdog.sh` (see `--help` for a cron one-liner) |
+| `git push` fails | Set `GITHUB_TOKEN_FILE` in `.env` to a host file containing your PAT |
 | Permission denied on workspace | `chown -R 1000:1000 /your/workspace/` on the host |
 
 ---

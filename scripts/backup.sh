@@ -10,6 +10,7 @@ TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR="${PROJECT_DIR}/backups"
 INCLUDE_WORKSPACE=false
 QUIET=false
+ENCRYPT=false
 MASKED_ENV_TMPDIR=""
 
 RED='\033[0;31m'
@@ -33,12 +34,19 @@ while [[ $# -gt 0 ]]; do
             QUIET=true
             shift
             ;;
+        --encrypt)
+            ENCRYPT=true
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [--output DIR] [--include-workspace] [--quiet]"
+            echo "Usage: $0 [--output DIR] [--include-workspace] [--quiet] [--encrypt]"
             echo ""
             echo "  --output DIR          Backup destination directory (default: ./backups/)"
             echo "  --include-workspace   Include external workspace in backup"
             echo "  --quiet               Quiet mode (for use by other scripts)"
+            echo "  --encrypt             Encrypt the archive with GPG (AES256, symmetric)."
+            echo "                        Passphrase from \$BACKUP_ENCRYPT_PASSPHRASE (env or .env),"
+            echo "                        or an interactive gpg prompt if unset. Requires gpg on the host."
             exit 0
             ;;
         *)
@@ -106,10 +114,10 @@ load_env() {
 
     if [ -n "${REMOTE_SESSION_NAME}" ]; then
         BACKUP_NAME="claude-code-dock-${REMOTE_SESSION_NAME}-backup-${TIMESTAMP}"
-        BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
+        BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz*"
     else
         BACKUP_NAME="claude-code-dock-backup-${TIMESTAMP}"
-        BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
+        BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz*"
     fi
 }
 
@@ -148,10 +156,14 @@ backup_env() {
 
     step "Backing up .env (secrets masked)..."
 
+    # Name-pattern based, not a fixed list of variable names -- excludes any
+    # line whose key looks like a secret (…TOKEN…, …KEY…, …SECRET…,
+    # …PASSWORD…, …PASSPHRASE…) so a new secret-like var doesn't need this
+    # script updated to stay excluded from the plaintext .env copy.
     MASKED_ENV_TMPDIR=$(mktemp -d)
-    grep -vE "^(GITHUB_TOKEN|CLAUDE_API_KEY)\s*=" "${ENV_FILE}" \
+    grep -vE "^[A-Za-z_]*(TOKEN|KEY|SECRET|PASSWORD|PASSPHRASE)[A-Za-z_]*\s*=" "${ENV_FILE}" \
         > "${MASKED_ENV_TMPDIR}/.env.backup" 2>/dev/null || true
-    ok ".env backed up (GITHUB_TOKEN and secrets excluded — included in archive)"
+    ok ".env backed up (secret-looking variables excluded — included in archive)"
 }
 
 create_backup_archive() {
@@ -206,6 +218,42 @@ create_backup_archive() {
     ok "Backup created: ${BOLD}${BACKUP_FILE}${RESET} (${BACKUP_SIZE})"
 }
 
+# BACKUP_ENCRYPT_PASSPHRASE isn't sourced from .env like other settings here
+# (backup.sh never does a full `source .env`, only targeted greps) — read it
+# the same targeted way so cron-driven, non-interactive encryption works
+# without requiring the caller to export it into the shell first.
+encrypt_backup() {
+    if [ "${ENCRYPT}" != "true" ]; then
+        return
+    fi
+
+    if ! command -v gpg &>/dev/null; then
+        fail "--encrypt requires gpg on this host (not the container). Install it, e.g. 'apt install gnupg', and try again. Plaintext archive kept at: ${BACKUP_FILE}"
+    fi
+
+    if [ -z "${BACKUP_ENCRYPT_PASSPHRASE:-}" ] && [ -f "${ENV_FILE}" ]; then
+        BACKUP_ENCRYPT_PASSPHRASE=$(grep "^BACKUP_ENCRYPT_PASSPHRASE=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+    fi
+
+    step "Encrypting backup with GPG (AES256, symmetric)..."
+
+    if [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ]; then
+        if ! gpg --symmetric --cipher-algo AES256 --batch --yes --pinentry-mode loopback \
+                --passphrase "${BACKUP_ENCRYPT_PASSPHRASE}" -o "${BACKUP_FILE}.gpg" "${BACKUP_FILE}"; then
+            fail "GPG encryption failed. Plaintext archive kept at: ${BACKUP_FILE}"
+        fi
+    else
+        if ! gpg --symmetric --cipher-algo AES256 --yes -o "${BACKUP_FILE}.gpg" "${BACKUP_FILE}"; then
+            fail "GPG encryption failed. Plaintext archive kept at: ${BACKUP_FILE}"
+        fi
+    fi
+
+    rm -f "${BACKUP_FILE}"
+    BACKUP_FILE="${BACKUP_FILE}.gpg"
+    BACKUP_SIZE=$(du -sh "${BACKUP_FILE}" 2>/dev/null | cut -f1 || echo "unknown")
+    ok "Backup encrypted: ${BOLD}${BACKUP_FILE}${RESET} (${BACKUP_SIZE}) — plaintext archive removed"
+}
+
 manage_old_backups() {
     step "Checking existing backups..."
 
@@ -239,8 +287,14 @@ print_result() {
     log ""
     log "  File: ${BOLD}${BACKUP_FILE}${RESET}"
     log ""
-    log "  To restore:"
-    log "  ${BOLD}./scripts/restore.sh ${BACKUP_FILE}${RESET}"
+    if [[ "${BACKUP_FILE}" == *.gpg ]]; then
+        log "  To restore:"
+        log "  ${BOLD}gpg --decrypt ${BACKUP_FILE} > $(basename "${BACKUP_FILE}" .gpg)${RESET}"
+        log "  ${BOLD}./scripts/restore.sh $(basename "${BACKUP_FILE}" .gpg)${RESET}"
+    else
+        log "  To restore:"
+        log "  ${BOLD}./scripts/restore.sh ${BACKUP_FILE}${RESET}"
+    fi
     log ""
 }
 
@@ -251,6 +305,7 @@ main() {
     check_config
     backup_env
     create_backup_archive
+    encrypt_backup
     manage_old_backups
     print_result
 }

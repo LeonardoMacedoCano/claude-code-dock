@@ -98,16 +98,19 @@ docker compose up -d --force-recreate
 
 ### claude-code-dock volumes
 
-The project uses three volumes:
+The project uses four volumes:
 
 ```yaml
 volumes:
   - ${WORKSPACE_PATH}:/workspace                                     # User projects
   - ${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}:/home/node/.claude     # Claude Code credentials (per-session)
   - ${SHARED_CONFIG_PATH}:/home/node/.claude-shared:ro                # Optional: global CLAUDE.md/commands
+  - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro      # Optional: GitHub PAT file (or /dev/null, a no-op)
 ```
 
 **Important note:** The config volume mounts to `/home/node/.claude` (not `/root/.claude`), because the container runs as the `node` user (UID 1000, non-root). It must be writable by UID 1000 on the host — if `CONFIG_BASE_PATH` is unset it silently falls back to `./configs`, and Docker will auto-create that as root-owned, which the entrypoint now rejects at startup (see [Container restart loop](#container-restart-loop) below) instead of crash-looping silently.
+
+**On the `GITHUB_TOKEN_FILE` mount:** unlike the other three, this one is designed to always be present in the `volumes:` list, token configured or not — `${GITHUB_TOKEN_FILE:-/dev/null}` is a standard Compose idiom for an "optional file mount": when `.env`'s `GITHUB_TOKEN_FILE` is unset, Compose mounts `/dev/null` instead (reads as empty, harmless). If you *do* set `GITHUB_TOKEN_FILE` to a host path, make sure the file actually exists there first — Docker auto-creates an empty **directory** at the mount target when the host source is missing, and `entrypoint.sh` detects and warns about that specific case (it can't read a directory as a token).
 
 ### Inspect volumes
 
@@ -139,13 +142,13 @@ du -sh "${WORKSPACE_PATH}"
 | Variable | Source | Description |
 |----------|--------|-------------|
 | `AUTO_START_MODE` | `.env` | Execution mode: interactive, remote, shell — validated at startup, invalid values now fail fast instead of silently defaulting |
-| `CLAUDE_AUTO_APPROVE` | `.env` | Enables --dangerously-skip-permissions |
-| `CLAUDE_EXTRA_ARGS` | `.env` | Extra arguments for Claude |
+| `CLAUDE_AUTO_APPROVE` | `.env` | Enables --dangerously-skip-permissions (default `false`) |
+| `CLAUDE_EXTRA_ARGS` | `.env` | Extra arguments for Claude — quote-aware parsing, so quoted substrings with spaces survive as one argument |
 | `REMOTE_SESSION_NAME` | `.env` | Session ID — passed into the container; used for the tmux/remote session name and shown in startup logs |
 | `TZ` | `.env` | Timezone |
 | `GIT_USER_NAME` | `.env` | Name for git commits |
 | `GIT_USER_EMAIL` | `.env` | Email for git commits |
-| `GITHUB_TOKEN` | `.env` | GitHub PAT for push/pull authentication |
+| `GITHUB_TOKEN_FILE` | `.env` | HOST path to a file with the GitHub PAT — auto-mounted read-only to the fixed in-container path `/run/secrets/github_token` via the `${GITHUB_TOKEN_FILE:-/dev/null}` volume idiom in `docker-compose.yml` |
 | `GIT_REPO_URL` | `.env` | Repo to auto-clone into `/workspace` on first start |
 | `TERM` | `docker-compose.yml` | Terminal type |
 | `LANG` | `docker-compose.yml` | Default encoding |

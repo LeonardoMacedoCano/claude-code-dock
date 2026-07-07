@@ -40,10 +40,13 @@ BATS_FILES=(
   "$SCRIPT_DIR/entrypoint_symlink.bats"
   "$SCRIPT_DIR/entrypoint_settings.bats"
   "$SCRIPT_DIR/entrypoint_shared_config.bats"
+  "$SCRIPT_DIR/entrypoint_github_token.bats"
   "$SCRIPT_DIR/backup_retention.bats"
+  "$SCRIPT_DIR/backup_encrypt.bats"
   "$SCRIPT_DIR/healthcheck.bats"
   "$SCRIPT_DIR/status_update_check.bats"
   "$SCRIPT_DIR/session_up.bats"
+  "$SCRIPT_DIR/watchdog.bats"
 )
 
 BATS_ERRORS=0

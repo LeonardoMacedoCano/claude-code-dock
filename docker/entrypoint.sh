@@ -149,7 +149,7 @@ print_banner
 
 log_step "Startup configuration:"
 log_info "Execution mode:    ${BOLD}${AUTO_START_MODE:-interactive}${RESET}"
-log_info "Auto-approve:      ${BOLD}${CLAUDE_AUTO_APPROVE:-true}${RESET}"
+log_info "Auto-approve:      ${BOLD}${CLAUDE_AUTO_APPROVE:-false}${RESET}"
 if [ -n "${REMOTE_SESSION_NAME:-}" ]; then
     log_info "Session ID:        ${BOLD}${REMOTE_SESSION_NAME}${RESET}"
 else
@@ -225,11 +225,29 @@ if [ -n "${GIT_USER_EMAIL:-}" ]; then
         log_info "Git user.email: ${GIT_USER_EMAIL}"
 fi
 
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-    git config --global credential.helper store
-    echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > "${HOME}/.git-credentials"
-    chmod 600 "${HOME}/.git-credentials"
-    log_info "GitHub token: configured"
+# GITHUB_TOKEN_FILE is always this fixed in-container path by convention --
+# docker-compose.yml mounts the HOST path from .env's GITHUB_TOKEN_FILE here
+# (or /dev/null, read-only, when that's empty -- a standard Compose idiom for
+# "optional file mount"). The token's actual value never has to sit in .env,
+# a docker-compose environment: line, or the host shell's process environment
+# -- only a host *path* does. Never echoed; only ever written straight into
+# ~/.git-credentials (chmod 600).
+GITHUB_TOKEN_FILE="${GITHUB_TOKEN_FILE:-/run/secrets/github_token}"
+
+if [ -d "${GITHUB_TOKEN_FILE}" ]; then
+    # Docker auto-creates an empty directory at a bind-mount target when the
+    # HOST source path doesn't exist yet -- this is that misconfiguration,
+    # not a real token file, so it needs a loud warning instead of silently
+    # trying (and failing) to read it as a file.
+    log_warn "GITHUB_TOKEN_FILE=${GITHUB_TOKEN_FILE} is a directory, not a file — the host path in .env's GITHUB_TOKEN_FILE probably doesn't exist yet. Create the file on the host and run: docker compose up -d --force-recreate"
+elif [ -r "${GITHUB_TOKEN_FILE}" ]; then
+    TOKEN_VALUE="$(tr -d '\n' < "${GITHUB_TOKEN_FILE}" 2>/dev/null || true)"
+    if [ -n "${TOKEN_VALUE}" ]; then
+        git config --global credential.helper store
+        echo "https://x-access-token:${TOKEN_VALUE}@github.com" > "${HOME}/.git-credentials"
+        chmod 600 "${HOME}/.git-credentials"
+        log_info "GitHub token: configured (from GITHUB_TOKEN_FILE)"
+    fi
 fi
 
 if [ -n "${GIT_REPO_URL:-}" ]; then
@@ -246,7 +264,7 @@ if [ -n "${GIT_REPO_URL:-}" ]; then
     fi
 fi
 
-if [ "${CLAUDE_AUTO_APPROVE:-true}" = "true" ]; then
+if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
     SETTINGS_FILE="${HOME}/.claude/settings.json"
     if [ -f "${SETTINGS_FILE}" ]; then
         if command -v jq &>/dev/null; then
@@ -313,7 +331,7 @@ CMD_ARGS=()
 
 case "${MODE}" in
     remote)
-        if [ "${CLAUDE_AUTO_APPROVE:-true}" = "true" ]; then
+        if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
             CMD_ARGS+=("--dangerously-skip-permissions")
         fi
         # --continue reconnects to the Remote Control session recorded in the
@@ -335,14 +353,22 @@ case "${MODE}" in
         CMD_BIN="bash"
         ;;
     interactive|*)
-        if [ "${CLAUDE_AUTO_APPROVE:-true}" = "true" ]; then
+        if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
             CMD_ARGS+=("--dangerously-skip-permissions")
         fi
         ;;
 esac
 
 if [ -n "${CLAUDE_EXTRA_ARGS:-}" ]; then
-    read -ra EXTRA_ARRAY <<< "${CLAUDE_EXTRA_ARGS}"
+    # Quote-aware split via eval: a quoted substring survives as one argument
+    # (e.g. CLAUDE_EXTRA_ARGS='--append-system-prompt "be terse"'). Safe here
+    # because CLAUDE_EXTRA_ARGS is operator-controlled config, the same trust
+    # level as GIT_REPO_URL or GITHUB_TOKEN_FILE, not untrusted external input.
+    EXTRA_ARRAY=()
+    if ! eval "EXTRA_ARRAY=(${CLAUDE_EXTRA_ARGS})" 2>/dev/null; then
+        log_warn "CLAUDE_EXTRA_ARGS has unbalanced quotes — falling back to plain whitespace splitting."
+        read -ra EXTRA_ARRAY <<< "${CLAUDE_EXTRA_ARGS}"
+    fi
     CMD_ARGS+=("${EXTRA_ARRAY[@]}")
 fi
 

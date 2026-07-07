@@ -23,6 +23,7 @@ SHELL_FILES=(
   "$PROJECT_DIR/scripts/session-up.sh"
   "$PROJECT_DIR/scripts/sessions.sh"
   "$PROJECT_DIR/scripts/status.sh"
+  "$PROJECT_DIR/scripts/watchdog.sh"
   "$PROJECT_DIR/scripts/update.sh"
   "$PROJECT_DIR/scripts/backup.sh"
   "$PROJECT_DIR/scripts/restore.sh"
