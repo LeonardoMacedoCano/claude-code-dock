@@ -126,7 +126,7 @@ rebuild_image() {
         return
     fi
 
-    step "BUILD SOURCE: prebuilt GHCR image (${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest})"
+    step "BUILD SOURCE: prebuilt GHCR image (ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest})"
     echo ""
     if ${COMPOSE_CMD} -f "${COMPOSE_FILE}" pull; then
         ok "Image pulled successfully."

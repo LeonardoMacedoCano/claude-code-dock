@@ -154,7 +154,7 @@ GITHUB_TOKEN_FILE=/srv/claude-secrets/github_token
 GIT_REPO_URL=https://github.com/your-user/your-repo.git
 ```
 
-Leave `CLAUDE_SOURCE_PATH` empty (default) so `docker compose pull` fetches the prebuilt image from GHCR — pin a version with `CLAUDE_DOCK_IMAGE` (e.g. a specific tag) if needed. Only set `CLAUDE_SOURCE_PATH` if you have a local clone of claude-code-dock you want to build from instead.
+Leave `CLAUDE_SOURCE_PATH` empty (default) so `docker compose pull` fetches the prebuilt image from GHCR — pin a tag with `CLAUDE_DOCK_TAG` (e.g. `stable` or a specific `vX.Y.Z`) if needed. Only set `CLAUDE_SOURCE_PATH` if you have a local clone of claude-code-dock you want to build from instead.
 
 ### 3. Pull and start
 
@@ -183,7 +183,7 @@ For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PAT
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CONTAINER_NAME` | `claude-code-dock` | Docker container name — must be unique per container on the same host |
-| `CLAUDE_DOCK_IMAGE` | `ghcr.io/leonardomacedocano/claude-code-dock:latest` | Prebuilt image pulled by default — override to pin a tag or use your own fork's registry |
+| `CLAUDE_DOCK_TAG` | `latest` | Published tag pulled by default — set `stable` or a pinned `vX.Y.Z` to avoid riding the weekly `latest` bump |
 | `CLAUDE_DOCK_VERSION` | `main` | Branch/tag of claude-code-dock to build from, when building instead of pulling |
 | `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to build from instead of pulling the prebuilt image (advanced) |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories — share this across all containers |

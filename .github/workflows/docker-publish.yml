@@ -16,7 +16,7 @@ on:
           Also tag+push this build as 'stable'. 'latest' keeps moving on every
           push and on the weekly rebuild regardless of this input -- 'stable'
           only ever moves when a human runs this manually with this checked,
-          so anyone can pin CLAUDE_DOCK_IMAGE=...:stable to avoid riding an
+          so anyone can pin CLAUDE_DOCK_TAG=stable to avoid riding an
           untested weekly @anthropic-ai/claude-code bump.
         type: boolean
         default: false

@@ -109,8 +109,8 @@ Typical configuration for Unraid:
 
 ```env
 # Leave CLAUDE_SOURCE_PATH unset — `docker compose pull` fetches the prebuilt
-# image from GHCR directly. Pin a version with CLAUDE_DOCK_IMAGE once tagged
-# releases are available, e.g. CLAUDE_DOCK_IMAGE=ghcr.io/leonardomacedocano/claude-code-dock:v1.0.0
+# image from GHCR directly. Pin a tag with CLAUDE_DOCK_TAG once tagged
+# releases are available, e.g. CLAUDE_DOCK_TAG=v1.0.0
 CLAUDE_DOCK_VERSION=main
 
 # Workspace on SSD cache (faster than the HDD array)

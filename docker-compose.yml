@@ -1,21 +1,11 @@
 services:
   claude-code-dock:
     container_name: ${CONTAINER_NAME:-claude-code-dock}
-    # `image:` lets `docker compose pull` fetch the prebuilt, CI-published image
-    # (fast — no local apt-get/npm install). `build:` stays as the fallback path
-    # for CLAUDE_SOURCE_PATH (local dev/testing of claude-code-dock itself) or
-    # `docker compose build` when a prebuilt image isn't available/desired.
-    #
-    # IMPORTANT: because both keys are set, a bare `docker compose up -d` will
-    # NOT rebuild if an image already exists locally under this tag (e.g. from
-    # a prior `docker compose pull`) — Compose only builds when the tag is
-    # missing or a build is explicitly requested. So CLAUDE_SOURCE_PATH only
-    # takes priority if you force the build yourself:
-    #   docker compose build --no-cache && docker compose up -d
-    #   (or the one-liner: docker compose up -d --build)
-    # scripts/install.sh and scripts/update.sh already do this automatically
-    # whenever CLAUDE_SOURCE_PATH is set. See docs/docker.md#local-development.
-    image: ${CLAUDE_DOCK_IMAGE:-ghcr.io/leonardomacedocano/claude-code-dock:latest}
+    # image: pull path (fast, default). build: fallback path (CLAUDE_SOURCE_PATH
+    # local dev, or explicit `docker compose build`). Both intentional — see
+    # CLAUDE.md#docker-composeyml for the full rationale, including the
+    # `docker compose up -d --build` gotcha with CLAUDE_SOURCE_PATH.
+    image: ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest}
     build:
       context: ${CLAUDE_SOURCE_PATH:-https://github.com/LeonardoMacedoCano/claude-code-dock.git#${CLAUDE_DOCK_VERSION:-main}}
       args:
@@ -23,26 +13,21 @@ services:
         CLAUDE_DOCK_SOURCE_PATH: ${CLAUDE_SOURCE_PATH:-}
         CLAUDE_DOCK_VERSION: ${CLAUDE_DOCK_VERSION:-main}
     environment:
-      # Read by entrypoint.sh's root step-down block to remap the 'node'
-      # account before dropping privilege -- default 1000/1000 matches the
-      # image's built-in node user, so leaving these unset is a no-op.
+      # PUID/PGID: read by entrypoint.sh's root step-down block (default
+      # 1000/1000, a no-op when unset). See CLAUDE.md#docker-composeyml.
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - AUTO_START_MODE=${AUTO_START_MODE:-interactive}
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-false}
       - CLAUDE_EXTRA_ARGS=${CLAUDE_EXTRA_ARGS:-}
       - REMOTE_SESSION_NAME=${REMOTE_SESSION_NAME:-}
-      # Host-side paths, passed through so a startup permission failure can
-      # print the exact host command to fix it instead of a generic placeholder.
+      # Host-side paths, passed through for startup-error messages.
       - CONFIG_BASE_PATH=${CONFIG_BASE_PATH:-}
       - WORKSPACE_PATH=${WORKSPACE_PATH:-}
       - TZ=${TZ:-UTC}
       - GIT_USER_NAME=${GIT_USER_NAME:-}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
-      # Fixed in-container convention path, not the host path from .env's
-      # GITHUB_TOKEN_FILE below -- entrypoint.sh always reads the token from
-      # here. Compose mounts the real file (or /dev/null when unset) to this
-      # exact path in the `volumes:` block, so this line should not change.
+      # Fixed convention path -- do not change; see CLAUDE.md#docker-composeyml.
       - GITHUB_TOKEN_FILE=/run/secrets/github_token
       - GIT_REPO_URL=${GIT_REPO_URL:-}
       - TERM=xterm-256color
@@ -52,11 +37,8 @@ services:
       - ${WORKSPACE_PATH:-./workspaces}:/workspace
       - ${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}:/home/node/.claude
       - ${SHARED_CONFIG_PATH:-./shared-config}:/home/node/.claude-shared:ro
-      # Optional-file-mount idiom: mounts the real token file at the HOST path
-      # from .env's GITHUB_TOKEN_FILE, or /dev/null (harmless, reads as empty)
-      # when that's unset -- so this line is always safe to leave in place,
-      # token configured or not. Set GITHUB_TOKEN_FILE=/path/on/host/to/token
-      # in .env to enable; leave empty to skip GitHub authentication entirely.
+      # Optional file mount: real token file if GITHUB_TOKEN_FILE is set in
+      # .env, harmless /dev/null otherwise. See CLAUDE.md#docker-composeyml.
       - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro
     stdin_open: true
     tty: true

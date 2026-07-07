@@ -234,7 +234,7 @@ docker compose build --no-cache
 
 Testing an unreleased change to claude-code-dock itself? Set `CLAUDE_SOURCE_PATH`
 in `.env` to your local clone (e.g. `CLAUDE_SOURCE_PATH=.`). This is the
-highest-priority source: when set, it always wins over `CLAUDE_DOCK_IMAGE`
+highest-priority source: when set, it always wins over `CLAUDE_DOCK_TAG`
 (prebuilt pull) and `CLAUDE_DOCK_VERSION` (GitHub ref) — both are ignored.
 
 `./scripts/install.sh` and `./scripts/update.sh` detect `CLAUDE_SOURCE_PATH`
