@@ -21,6 +21,68 @@ claude-code-dock is a Docker infrastructure solution for running **Claude Code**
 - A login automation system
 - A project focused on Remote Control (Remote Control is an optional feature)
 
+**Primary goal, stated plainly:** let `claude` run as a durable, always-authenticated background process on a server you control, so a Remote Control session (or an SSH terminal) is available the instant you open it — no re-login, no re-preparing the environment, no dependency on a laptop staying awake.
+
+---
+
+## Usage Profiles
+
+Every operator of this project falls into one of a small number of profiles, distinguished entirely by which optional `.env` variables they set. Everything below `REMOTE_SESSION_NAME`/`WORKSPACE_PATH`/`CONFIG_BASE_PATH` (required for any profile) is opt-in — nothing about GitHub, extra Claude arguments, PUID/PGID remapping, shared config, or the build source is ever mandatory. Use this section to figure out "which vars actually matter for what I'm trying to do" before touching `.env` or answering a user's question about it. The full per-variable reference stays in [Environment Variables](#environment-variables) below — this section is the "which subset of that table applies to me" index.
+
+### Profile 1 — Default: simplest setup, no GitHub
+
+Just wants Claude Code running persistently, reachable from a terminal (`AUTO_START_MODE=interactive`, the default), pointed at a local/NAS workspace. No git integration inside the container at all — the user commits/pushes from their own machine, or doesn't use git in this workspace.
+
+- **Needs:** `REMOTE_SESSION_NAME`, `WORKSPACE_PATH`, `CONFIG_BASE_PATH`.
+- **Leaves unset:** everything under `GIT_*`/`GITHUB_TOKEN_FILE`, `CLAUDE_SOURCE_PATH`, `PUID`/`PGID` (defaults to 1000/1000), `SHARED_CONFIG_PATH`.
+- **Image source:** pulls the prebuilt `CLAUDE_DOCK_IMAGE` (default `ghcr.io/leonardomacedocano/claude-code-dock:latest`) — no local build.
+- **Enforced by:** `validate_config()` in `entrypoint.sh` only checks `AUTO_START_MODE` + writable config/workspace dirs; `check_env()` in `install.sh` hard-`fail`s only on missing `REMOTE_SESSION_NAME`/`WORKSPACE_PATH`/`CONFIG_BASE_PATH`. Nothing about git is ever validated for this profile because nothing about git is set.
+
+### Profile 2 — Remote Control, no GitHub
+
+Same as Profile 1, but wants access from any device via Claude Remote Control instead of (or in addition to) SSH+terminal.
+
+- **Adds on top of Profile 1:** `AUTO_START_MODE=remote`.
+- **Still leaves unset:** all `GIT_*`/`GITHUB_TOKEN_FILE` vars.
+- Everything else (enforcement, image source) is identical to Profile 1.
+
+### Profile 3 — Local or Remote + GitHub
+
+Wants Claude to be able to commit and push from inside the container — either profile 1 or 2's execution mode, plus real git identity and (optionally) push/pull authentication.
+
+- **Adds on top of Profile 1 or 2:** `GIT_USER_NAME`, `GIT_USER_EMAIL` (commit authorship only — no push capability by themselves), `GITHUB_TOKEN_FILE` (a **host path** to a token file, never the token itself — required for `git push`/pulling private repos), and optionally `GIT_REPO_URL` (HTTPS only, auto-clones into `/workspace` on first start if it's empty).
+- **Enforced by:** nothing is `fatal()`/`fail`-blocking — all of these stay silently inert if unset (`entrypoint.sh` just skips the `git config --global` calls and the `GITHUB_TOKEN_FILE` mount falls back to a harmless `/dev/null`). This is why the [AI Guidelines below](#ai-guidelines--github-operations) exist: since nothing blocks a misconfigured attempt at the container level, the assistant has to check before acting instead of relying on a startup failure to catch it.
+- See [Git & GitHub setup](README.md#git--github) for the host-side token-file steps.
+
+### Profile 4 — claude-code-dock contributor / local build
+
+Not just running the project — modifying claude-code-dock itself and needs the container built from a local working tree instead of the published image.
+
+- **Adds:** `CLAUDE_SOURCE_PATH` (e.g. `.` or an absolute clone path) — highest priority of all build-source vars, always wins over `CLAUDE_DOCK_IMAGE`/`CLAUDE_DOCK_VERSION` when set.
+- **Combines freely** with Profiles 1–3's other choices (execution mode, GitHub or not) — it only changes *where the image comes from*, not runtime behavior.
+- **Enforced by:** `install.sh`/`update.sh` detect it and force `docker compose build --no-cache` automatically; a bare `docker compose up -d` run manually does *not* rebuild (see `docs/docker.md#local-development`) — this is a real footgun if scripts are bypassed, not a validation gap.
+- See the [Contributor Guidelines](#contributor-guidelines) section below for the full PR workflow.
+
+### Feature → requirement matrix
+
+| Feature | Env var(s) that gate it | Enforced, or silent no-op when unset? |
+|---------|--------------------------|----------------------------------------|
+| Claude in terminal (interactive) | `AUTO_START_MODE=interactive` (default) | Validated (`validate_config()`) |
+| Claude Remote Control | `AUTO_START_MODE=remote` | Validated (`validate_config()`) |
+| Debug shell as PID 1 | `AUTO_START_MODE=shell` | Validated (`validate_config()`) |
+| Git commit authorship | `GIT_USER_NAME`, `GIT_USER_EMAIL` | Silent no-op — commits just get no author identity |
+| Git push / private-repo pull | `GITHUB_TOKEN_FILE` | Silent no-op — `git push`/private `git pull` just fails at git's own auth layer |
+| Auto-clone into `/workspace` on first start | `GIT_REPO_URL` | Silent no-op; also skipped (not an error) if `/workspace` is already non-empty |
+| `--dangerously-skip-permissions` | `CLAUDE_AUTO_APPROVE=true` | Applied via `settings.json`; defaults to `false` |
+| Extra Claude CLI flags | `CLAUDE_EXTRA_ARGS` | Silent no-op when unset; malformed quoting warns and falls back to plain splitting |
+| Remap container user off UID/GID 1000 | `PUID`/`PGID` | Validated — `0` or non-integer is `fatal()` |
+| Shared `CLAUDE.md`/commands across sessions | `SHARED_CONFIG_PATH` | Silent no-op when unset |
+| Build from local clone instead of pulling | `CLAUDE_SOURCE_PATH` | Not validated by the container itself; `install.sh`/`update.sh` enforce the correct build path, manual `docker compose up -d` does not |
+| Pin/override the pulled image | `CLAUDE_DOCK_IMAGE` | Silent no-op when unset (falls back to `:latest`); ignored entirely if `CLAUDE_SOURCE_PATH` is set |
+| Backup retention beyond the last 10 | `BACKUP_RETENTION` | Silent no-op when unset (defaults to 10) |
+| Encrypted backups, non-interactive | `BACKUP_ENCRYPT_PASSPHRASE` (with `backup.sh --encrypt`) | Silent no-op when unset — `gpg` just prompts interactively instead |
+| Watchdog restart notifications | `WATCHDOG_NTFY_URL` (host-side only) | Silent no-op when unset or `curl` missing |
+
 ---
 
 ## AI Guidelines — GitHub Operations
@@ -115,6 +177,16 @@ Check via the safe methods in section 1 — process env presence test (for the n
 ```
 
 If any item is missing, inform the user and pause. Never silently skip a check or attempt to work around a missing credential. Never print or echo the value of the token (or any file that contains it) while performing this checklist.
+
+### 4. Determine the GitHub profile once per session
+
+The checklist in section 3 answers one underlying question: is this a GitHub-enabled setup ([Profile 3](#profile-3--local-or-remote--github)) or not ([Profile 1/2](#profile-1--default-simplest-setup-no-github))? Once answered in a conversation, treat it as settled for the rest of that conversation instead of re-running the full checklist on every subsequent commit/push/clone request:
+
+- **Run the checklist once**, the first time a GitHub-flavored request comes up, and remember the result (configured / not configured, and which specific piece was missing if not) for the remainder of the conversation.
+- **Re-check only when something could plausibly have changed the answer:** the user says they edited `.env`, rotated or added the token, changed git identity, or recreated/restarted the container since the last check — or the previous result was "missing X" and the user now says they fixed it.
+- **Asymmetric risk, so don't cache blindly forever:** a stale "configured" result costs at most one failed git command that surfaces the real error anyway. A stale "not configured" result that never gets re-verified after the user says they fixed it just blocks them needlessly — always re-check on an explicit "I fixed it" / "try again" rather than repeating the old refusal from memory.
+- **A clear user statement of their profile satisfies the check directly.** If the user has already said "no GitHub, just local" (or equivalent), don't contradict that by running file checks anyway — only fall back to the section 3 checklist when a GitHub-flavored request comes in *without* the user having stated their profile.
+- This is in-conversation reasoning only, not a file or setting written anywhere — a new conversation always starts by running the checklist fresh on the first GitHub-flavored request.
 
 ---
 

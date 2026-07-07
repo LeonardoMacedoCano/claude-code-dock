@@ -31,6 +31,60 @@ If a session freezes (Claude stuck waiting for a permission prompt), VPN into yo
 
 ---
 
+## Which Setup Is Yours?
+
+Every `.env` boils down to one of four combinations. Find yours, copy the snippet, then follow the [Setup](#setup) walkthrough below with those values.
+
+### 1. Default — simplest, no GitHub
+
+You just want Claude running persistently and reachable from a terminal. No git integration inside the container.
+
+```env
+REMOTE_SESSION_NAME=my-project
+WORKSPACE_PATH=/srv/www/my-project
+CONFIG_BASE_PATH=/srv/claude-config
+```
+
+That's it — `AUTO_START_MODE` defaults to `interactive`, the image is pulled from GHCR, no `GIT_*` vars needed.
+
+### 2. Remote Control — same, but from any device
+
+Same as #1, plus Remote Control so you can drive it from claude.ai on your phone or laptop without SSHing in first.
+
+```env
+REMOTE_SESSION_NAME=my-project
+WORKSPACE_PATH=/srv/www/my-project
+CONFIG_BASE_PATH=/srv/claude-config
+AUTO_START_MODE=remote
+```
+
+### 3. With GitHub — commit and push from inside the container
+
+Either of the above, plus a git identity and (optionally) push/pull authentication so Claude can commit and open PRs on your behalf.
+
+```env
+REMOTE_SESSION_NAME=my-project
+WORKSPACE_PATH=/srv/www/my-project
+CONFIG_BASE_PATH=/srv/claude-config
+GIT_USER_NAME=Your Name
+GIT_USER_EMAIL=you@email.com
+GITHUB_TOKEN_FILE=/srv/claude-secrets/github_token
+```
+
+Read [Git & GitHub](#git--github) below before setting this up — `GITHUB_TOKEN_FILE` is a **host path** to a token file, never a literal token in `.env`.
+
+### 4. Contributor — building claude-code-dock itself from a local clone
+
+You're changing claude-code-dock's Dockerfile/scripts/entrypoint, not just using it, and want the container built from your working tree instead of the published image.
+
+```env
+CLAUDE_SOURCE_PATH=.
+```
+
+Combine freely with any of profiles 1–3 above — this only changes where the image is built from. See [docs/docker.md#local-development](docs/docker.md#local-development) for the rebuild caveats (`docker compose up -d` alone won't pick up local changes).
+
+---
+
 ## Example
 
 You have a website running on your server. One container, pointed at the production folder:
