@@ -52,7 +52,7 @@ Wants Claude to be able to commit and push from inside the container — either 
 
 - **Adds on top of Profile 1 or 2:** `GIT_USER_NAME`, `GIT_USER_EMAIL` (commit authorship only — no push capability by themselves), `GITHUB_TOKEN_FILE` (a **host path** to a token file, never the token itself — required for `git push`/pulling private repos), and optionally `GIT_REPO_URL` (HTTPS only, auto-clones into `/workspace` on first start if it's empty).
 - **Enforced by:** nothing is `fatal()`/`fail`-blocking — all of these stay silently inert if unset (`entrypoint.sh` just skips the `git config --global` calls and the `GITHUB_TOKEN_FILE` mount falls back to a harmless `/dev/null`). This is why the [AI Guidelines below](#ai-guidelines--github-operations) exist: since nothing blocks a misconfigured attempt at the container level, the assistant has to check before acting instead of relying on a startup failure to catch it.
-- See [Git & GitHub setup](README.md#git--github) for the host-side token-file steps.
+- See [Git & GitHub Integration](docs/git-integration.md) for the host-side token-file steps.
 
 ### Profile 4 — claude-code-dock contributor / local build
 

@@ -137,29 +137,49 @@ du -sh "${WORKSPACE_PATH}"
 
 ## Environment Variables
 
-### Available variables in the container
+Full reference for every variable claude-code-dock reads, split by where it's
+actually consulted. `.env.example` in the repo root carries the same
+information grouped by required/optional topic — use that file when writing
+your own `.env`; use this table when you need to know source/scope precisely.
+
+### Passed into the container
 
 | Variable | Source | Description |
 |----------|--------|-------------|
-| `AUTO_START_MODE` | `.env` | Execution mode: interactive, remote, shell — validated at startup, invalid values now fail fast instead of silently defaulting |
-| `CLAUDE_AUTO_APPROVE` | `.env` | Enables --dangerously-skip-permissions (default `false`) |
+| `PUID` / `PGID` | `.env` | UID/GID the container remaps its built-in `node` user to before dropping root (default `1000`/`1000`, a no-op when unset). `0` is rejected |
+| `CONTAINER_NAME` | `.env` | Informational only inside the container — echoed back in `entrypoint.sh`'s startup banner so the printed `docker exec` command matches this container's real name |
+| `AUTO_START_MODE` | `.env` | Execution mode: interactive, remote, shell — validated at startup, invalid values fail fast instead of silently defaulting |
+| `CLAUDE_AUTO_APPROVE` | `.env` | Enables `--dangerously-skip-permissions` (default `false`) |
 | `CLAUDE_EXTRA_ARGS` | `.env` | Extra arguments for Claude — quote-aware parsing, so quoted substrings with spaces survive as one argument |
 | `REMOTE_SESSION_NAME` | `.env` | Session ID — passed into the container; used for the tmux/remote session name and shown in startup logs |
 | `TZ` | `.env` | Timezone |
-| `GIT_USER_NAME` | `.env` | Name for git commits |
-| `GIT_USER_EMAIL` | `.env` | Email for git commits |
-| `GITHUB_TOKEN_FILE` | `.env` | HOST path to a file with the GitHub PAT — auto-mounted read-only to the fixed in-container path `/run/secrets/github_token` via the `${GITHUB_TOKEN_FILE:-/dev/null}` volume idiom in `docker-compose.yml` |
+| `GIT_USER_NAME` / `GIT_USER_EMAIL` | `.env` | Git commit identity |
+| `GITHUB_TOKEN_FILE` | fixed literal | Always `/run/secrets/github_token` inside the container — the host path from `.env`'s `GITHUB_TOKEN_FILE` is only ever used to resolve the volume mount, never passed through directly. See [Git & GitHub Integration](git-integration.md) |
 | `GIT_REPO_URL` | `.env` | Repo to auto-clone into `/workspace` on first start |
-| `TERM` | `docker-compose.yml` | Terminal type |
-| `LANG` | `docker-compose.yml` | Default encoding |
-
-`WORKSPACE_PATH`, `CONFIG_BASE_PATH`, and `SHARED_CONFIG_PATH` are **not** passed into the container as environment variables — they only exist on the host, where `docker compose` uses them to resolve the `volumes:` section. Inside the container you only ever see the mounted paths (`/workspace`, `/home/node/.claude`, `/home/node/.claude-shared`).
-
-### Inspect variables inside the container
+| `TERM` / `LANG` / `LC_ALL` | `docker-compose.yml` | Terminal type / encoding |
 
 ```bash
+# Inspect variables inside the container
 docker exec claude-code-dock env | sort
 ```
+
+### Host-only (never passed into the container)
+
+These exist only on the host — either `docker compose` uses them to resolve
+the `volumes:`/`image:`/`build:` sections, or a host-side script reads them
+directly. `docker exec claude-code-dock env` will never show these.
+
+| Variable | Used by | Description |
+|----------|---------|-------------|
+| `WORKSPACE_PATH` | `docker-compose.yml` volumes | Host path mounted at `/workspace` |
+| `CONFIG_BASE_PATH` | `docker-compose.yml` volumes | Base dir for per-session config, mounted at `/home/node/.claude` |
+| `SHARED_CONFIG_PATH` | `docker-compose.yml` volumes | Optional shared `CLAUDE.md`/`commands/` dir, mounted read-only |
+| `CLAUDE_DOCK_TAG` | `docker-compose.yml` `image:` | Published tag to pull (default `latest`; `stable` or a pinned `vX.Y.Z`) |
+| `CLAUDE_DOCK_VERSION` | `docker-compose.yml` `build:` | Git ref to build from when the pull fails and `CLAUDE_SOURCE_PATH` is unset (default `main`) |
+| `CLAUDE_SOURCE_PATH` | `docker-compose.yml` `build:` | Local clone to build from instead of pulling (advanced/dev) — see [Local development](#local-development) |
+| `BACKUP_RETENTION` | `scripts/backup.sh` | Backups kept per session (default `10`) |
+| `BACKUP_ENCRYPT_PASSPHRASE` | `scripts/backup.sh --encrypt` | Non-interactive GPG passphrase |
+| `WATCHDOG_NTFY_URL` | `scripts/watchdog.sh` | Webhook notified on restart/skip (read by the host cron job, never the container) |
 
 ---
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting Guide
+    url: https://github.com/LeonardoMacedoCano/claude-code-dock/blob/main/docs/troubleshooting.md
+    about: Check here first — most startup, connection, login, and permission problems are already covered.
+  - name: CONTRIBUTING guide
+    url: https://github.com/LeonardoMacedoCano/claude-code-dock/blob/main/CONTRIBUTING.md
+    about: Dev setup, test suite, and PR checklist for code contributions.
