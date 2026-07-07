@@ -169,7 +169,7 @@ docker compose up -d
 ### 4. First login (only once, for the first container)
 
 ```bash
-docker exec -it claude-code-dock-homepage tmux attach-session -t main
+docker exec -it --user node claude-code-dock-homepage tmux attach-session -t main
 ```
 
 Complete the authentication flow. Credentials are saved to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` (e.g. `/srv/claude-config/HomePage/`). Disconnect with `Ctrl+B, D` — the container keeps running.
@@ -273,7 +273,7 @@ GIT_REPO_URL=https://github.com/your-user/your-repo.git
 | `docker logs` / Unraid Logs tab shows nothing or terminal garbage | Expected once Claude starts (PID 1 is a tmux TUI) — use `./scripts/logs.sh --app` |
 | Session not in Remote Control | Check `AUTO_START_MODE=remote` and `REMOTE_SESSION_NAME` |
 | Asks for login on every restart | Verify `CONFIG_BASE_PATH` is the same value across all containers |
-| Remote Control session frozen | SSH → `docker exec -it <name> tmux attach-session -t main` → unblock |
+| Remote Control session frozen | SSH → `docker exec -it --user node <name> tmux attach-session -t main` → unblock |
 | Container running but reports `unhealthy` and `restart: unless-stopped` never kicks in | Docker only auto-restarts on exit, not on `unhealthy` — run `./scripts/watchdog.sh` (see `--help` for a cron one-liner) |
 | `git push` fails | Set `GITHUB_TOKEN_FILE` in `.env` to a host file containing your PAT |
 | Permission denied on workspace | `chown -R 1000:1000 /your/workspace/` on the host |

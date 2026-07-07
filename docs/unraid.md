@@ -39,7 +39,7 @@ Recommended structure on Unraid:
 - To disconnect without stopping: `Ctrl+B` then `D`
 
 **Debug shell (separate process):**
-- `./scripts/shell.sh` or `docker exec -it claude-code-dock bash`
+- `./scripts/shell.sh` or `docker exec -it --user node claude-code-dock bash`
 - Opens a separate bash shell without interfering with Claude Code
 
 ---
@@ -298,7 +298,7 @@ ssh root@your-unraid-server
 # Connect to Claude Code
 ./scripts/attach.sh
 # or directly:
-docker exec -it claude-code-dock tmux attach-session -t main
+docker exec -it --user node claude-code-dock tmux attach-session -t main
 ```
 
 To disconnect without stopping Claude: `Ctrl+B` then `D`.
@@ -330,7 +330,7 @@ To inspect the container without interfering with Claude Code:
 ```bash
 ./scripts/shell.sh
 # or directly:
-docker exec -it claude-code-dock bash
+docker exec -it --user node claude-code-dock bash
 ```
 
 ---

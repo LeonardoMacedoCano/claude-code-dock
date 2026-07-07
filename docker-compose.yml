@@ -17,6 +17,10 @@ services:
       # 1000/1000, a no-op when unset). See CLAUDE.md#docker-composeyml.
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
+      # Informational only (entrypoint.sh's startup banner) -- container_name:
+      # above is what actually names the container; this just lets the
+      # banner print the right `docker exec` command instead of a stale literal.
+      - CONTAINER_NAME=${CONTAINER_NAME:-claude-code-dock}
       - AUTO_START_MODE=${AUTO_START_MODE:-interactive}
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-false}
       - CLAUDE_EXTRA_ARGS=${CLAUDE_EXTRA_ARGS:-}

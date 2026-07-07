@@ -24,9 +24,9 @@ Conventional server:       claude-code-dock:
 
 Claude Code runs inside a tmux session named `main`. tmux is the container's PID 1. This means:
 
-- `docker exec -it claude-code-dock tmux attach-session -t main` connects to the running Claude session
+- `docker exec -it --user node claude-code-dock tmux attach-session -t main` connects to the running Claude session
 - `Ctrl+B D` detaches from the session without killing Claude
-- `docker exec -it claude-code-dock bash` opens a separate shell for inspection, without touching Claude
+- `docker exec -it --user node claude-code-dock bash` opens a separate shell for inspection, without touching Claude
 
 ---
 
@@ -49,7 +49,7 @@ docker compose up
 ./scripts/attach.sh
 
 # Or directly:
-docker exec -it claude-code-dock tmux attach-session -t main
+docker exec -it --user node claude-code-dock tmux attach-session -t main
 
 # To disconnect WITHOUT stopping Claude:
 # Press Ctrl+B then D
@@ -57,9 +57,9 @@ docker exec -it claude-code-dock tmux attach-session -t main
 
 **Why `tmux attach-session` and not `docker attach`?**
 
-Claude Code runs inside a tmux session named `main`. The container's PID 1 is `tmux`. `docker exec -it ... tmux attach-session -t main` connects to the existing session where Claude is running.
+Claude Code runs inside a tmux session named `main`. The container's PID 1 is `tmux`. `docker exec -it --user node ... tmux attach-session -t main` connects to the existing session where Claude is running.
 
-`docker exec -it ... bash` opens a new separate shell, useful for inspection but not for using Claude directly.
+`docker exec -it --user node ... bash` opens a new separate shell, useful for inspection but not for using Claude directly.
 
 ### Disconnect without stopping
 
@@ -348,10 +348,10 @@ services:
 
 ```bash
 # Connect to project A
-docker exec -it claude-project-a tmux attach-session -t main
+docker exec -it --user node claude-project-a tmux attach-session -t main
 
 # Connect to project B
-docker exec -it claude-project-b tmux attach-session -t main
+docker exec -it --user node claude-project-b tmux attach-session -t main
 ```
 
 ---
@@ -433,13 +433,13 @@ docker compose up -d
 
 # Connect
 ./scripts/attach.sh
-# or: docker exec -it claude-code-dock tmux attach-session -t main
+# or: docker exec -it --user node claude-code-dock tmux attach-session -t main
 
 # Disconnect (without stopping Claude)
 Ctrl+B, D
 
 # Debug shell (separate process)
-docker exec -it claude-code-dock bash
+docker exec -it --user node claude-code-dock bash
 # or
 ./scripts/shell.sh
 

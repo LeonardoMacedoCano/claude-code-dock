@@ -104,6 +104,26 @@ CONFIG_DIR="${CONFIG_BASE_PATH}/${SESSION_NAME}"
 mkdir -p "${CONFIG_DIR}"
 ok "Config directory: ${CONFIG_DIR}"
 
+# Mirrors install.sh's fix_ownership(): this directory is often created while
+# running as root over SSH (Unraid/NAS), which would otherwise leave it
+# root-owned and unwritable by the container's node user (PUID/PGID, default
+# 1000/1000) -- the #1 cause of a silent restart loop on that session's first
+# start. Best-effort: some hosts (rootless Docker, non-root runs, NFS with
+# root-squash) can't chown to an arbitrary UID, so failures just fall back to
+# a manual hint, same as install.sh.
+PUID_VALUE=$(grep "^PUID=" "${NEW_ENV}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+PGID_VALUE=$(grep "^PGID=" "${NEW_ENV}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+TARGET_UID="${PUID_VALUE:-1000}"
+TARGET_GID="${PGID_VALUE:-1000}"
+
+if chown -R "${TARGET_UID}:${TARGET_GID}" "${CONFIG_DIR}" 2>/dev/null; then
+    ok "Ownership set to UID:GID ${TARGET_UID}:${TARGET_GID} (node): ${CONFIG_DIR}"
+else
+    warn "Could not chown ${CONFIG_DIR} to ${TARGET_UID}:${TARGET_GID} (not root, or unsupported filesystem)."
+    echo -e "    If the container fails to start with a 'not writable' error, run manually:"
+    echo -e "    ${BOLD}chown -R ${TARGET_UID}:${TARGET_GID} ${CONFIG_DIR}${RESET}"
+fi
+
 echo ""
 echo -e "${GREEN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
 echo -e "${GREEN}${BOLD}║            Session Created Successfully!             ║${RESET}"
@@ -121,7 +141,7 @@ echo -e "  ${CYAN}To start this session:${RESET}"
 echo -e "  ${BOLD}./scripts/session-up.sh ${SESSION_NAME}${RESET}"
 echo ""
 echo -e "  ${CYAN}To attach:${RESET}"
-echo -e "  ${BOLD}docker exec -it ${CONTAINER_NAME_VALUE} tmux attach-session -t main${RESET}"
+echo -e "  ${BOLD}docker exec -it --user node ${CONTAINER_NAME_VALUE} tmux attach-session -t main${RESET}"
 echo ""
 echo -e "  ${CYAN}To view status:${RESET}"
 echo -e "  ${BOLD}CONTAINER_NAME=${CONTAINER_NAME_VALUE} ./scripts/status.sh${RESET}"

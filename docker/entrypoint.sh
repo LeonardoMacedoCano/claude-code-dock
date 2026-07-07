@@ -207,13 +207,13 @@ validate_config() {
             "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R ${target_uid}:${target_gid} ${config_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}\n\n    If CONFIG_BASE_PATH is not set in .env, set it first — otherwise it\n    silently falls back to ./configs, also created owned by root.\n    scripts/install.sh does this chown for you automatically on first setup (honoring PUID/PGID from .env if set)."
     fi
 
-    if ! mkdir -p "${WORKSPACE_DIR:-/workspace}" 2>/dev/null || \
-       ! ( touch "${WORKSPACE_DIR:-/workspace}/.write_test" 2>/dev/null && rm -f "${WORKSPACE_DIR:-/workspace}/.write_test" 2>/dev/null ); then
+    if ! mkdir -p "/workspace" 2>/dev/null || \
+       ! ( touch "/workspace/.write_test" 2>/dev/null && rm -f "/workspace/.write_test" 2>/dev/null ); then
         local workspace_owner
-        workspace_owner=$(stat -c '%U:%G (uid=%u, gid=%g)' "${WORKSPACE_DIR:-/workspace}" 2>/dev/null || echo "unknown")
+        workspace_owner=$(stat -c '%U:%G (uid=%u, gid=%g)' "/workspace" 2>/dev/null || echo "unknown")
         local workspace_host_path="${WORKSPACE_PATH:-<your WORKSPACE_PATH>}"
         fatal "Workspace directory is not writable" \
-            "${WORKSPACE_DIR:-/workspace} (bind-mounted from WORKSPACE_PATH on the host) is owned by ${BOLD}${workspace_owner}${RESET}, but this container runs as ${BOLD}node (uid=${target_uid}, gid=${target_gid})${RESET} and cannot write to it." \
+            "/workspace (bind-mounted from WORKSPACE_PATH on the host) is owned by ${BOLD}${workspace_owner}${RESET}, but this container runs as ${BOLD}node (uid=${target_uid}, gid=${target_gid})${RESET} and cannot write to it." \
             "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R ${target_uid}:${target_gid} ${workspace_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}"
     fi
 
@@ -329,7 +329,7 @@ elif [ -r "${GITHUB_TOKEN_FILE}" ]; then
 fi
 
 if [ -n "${GIT_REPO_URL:-}" ]; then
-    WORKSPACE_EMPTY=$(find "${WORKSPACE_DIR:-/workspace}" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' 2>/dev/null | head -1)
+    WORKSPACE_EMPTY=$(find "/workspace" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' 2>/dev/null | head -1)
     if [ -z "${WORKSPACE_EMPTY}" ]; then
         log_step "Cloning repository into /workspace..."
         if git clone "${GIT_REPO_URL}" /workspace 2>&1 | while IFS= read -r line; do log_info "${line}"; done; then
@@ -397,10 +397,10 @@ if [ -d "${SHARED_DIR}/commands" ]; then
 fi
 
 log_step "Workspace summary..."
-WORKSPACE_FILES=$(ls "${WORKSPACE_DIR:-/workspace}" 2>/dev/null | wc -l)
+WORKSPACE_FILES=$(ls "/workspace" 2>/dev/null | wc -l)
 log_info "Workspace: /workspace (${WORKSPACE_FILES} item(s))"
 
-cd "${WORKSPACE_DIR:-/workspace}"
+cd "/workspace"
 
 MODE="${AUTO_START_MODE:-interactive}"
 
@@ -472,19 +472,19 @@ echo ""
 case "${MODE}" in
     remote)
         echo -e "  ${BOLD}Execution mode:${RESET} ${GREEN}remote control${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-code-dock tmux attach-session -t main${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it --user node ${CONTAINER_NAME:-claude-code-dock} tmux attach-session -t main${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}Ctrl+B${RESET} then ${CYAN}D${RESET}"
         echo -e "  ${BOLD}Resume:${RESET}         auto-continues the last conversation in /workspace if one exists;"
         echo -e "                     starts fresh automatically if there's nothing resumable"
         ;;
     shell)
         echo -e "  ${BOLD}Execution mode:${RESET} ${YELLOW}shell (bash)${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-code-dock bash${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it --user node ${CONTAINER_NAME:-claude-code-dock} bash${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}exit${RESET} or ${CYAN}Ctrl+D${RESET}"
         ;;
     *)
         echo -e "  ${BOLD}Execution mode:${RESET} ${GREEN}interactive${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it claude-code-dock tmux attach-session -t main${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it --user node ${CONTAINER_NAME:-claude-code-dock} tmux attach-session -t main${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}Ctrl+B${RESET} then ${CYAN}D${RESET}"
         echo -e "  ${BOLD}Debug shell:${RESET}    ${CYAN}./scripts/shell.sh${RESET}"
         echo ""

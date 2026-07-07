@@ -184,7 +184,7 @@ check_env() {
     if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
         ok "CLAUDE_SOURCE_PATH: ${CLAUDE_SOURCE_PATH} (building from local clone)"
     else
-        ok "Building from GitHub: ${CLAUDE_DOCK_VERSION:-main}"
+        ok "Will pull ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest} (falls back to building from GitHub ref ${CLAUDE_DOCK_VERSION:-main} only if the pull fails)"
     fi
 
     case "${AUTO_START_MODE:-interactive}" in

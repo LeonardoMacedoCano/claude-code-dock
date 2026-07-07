@@ -161,7 +161,7 @@ investigate with a shell instead:
 docker compose up -d --force-recreate
 
 # Connect and investigate
-docker exec -it claude-code-dock bash
+docker exec -it --user node claude-code-dock bash
 ```
 
 Or start without entrypoint:
@@ -261,10 +261,10 @@ docker logs --tail 20 claude-code-dock
 
 ```bash
 # Check TERM inside the container
-docker exec claude-code-dock echo $TERM
+docker exec --user node claude-code-dock echo $TERM
 
 # When connecting, force the correct TERM
-TERM=xterm-256color docker exec -it claude-code-dock tmux attach-session -t main
+TERM=xterm-256color docker exec -it --user node claude-code-dock tmux attach-session -t main
 
 # If using local tmux, set tmux's TERM
 echo 'set -g default-terminal "screen-256color"' >> ~/.tmux.conf

@@ -229,7 +229,7 @@ Container (shell mode):
 
 1. **Correct signals:** Docker sends `SIGTERM` to PID 1 to stop the container. The process receives the signal directly and can shut down gracefully.
 
-2. **Reconnection via tmux:** PID 1 is tmux, which keeps the "main" session with Claude Code running. `docker exec -it claude-code-dock tmux attach-session -t main` connects to the session at any time, allowing multiple reconnections without restarting the process.
+2. **Reconnection via tmux:** PID 1 is tmux, which keeps the "main" session with Claude Code running. `docker exec -it --user node claude-code-dock tmux attach-session -t main` connects to the session at any time, allowing multiple reconnections without restarting the process.
 
 3. **No zombie processes:** When the parent process (PID 1) exits, all children exit. No risk of orphaned processes.
 
@@ -424,7 +424,8 @@ tmux new-session -s main claude --dangerously-skip-permissions
 **Critical fields:**
 - `stdin_open: true` and `tty: true`: required for Claude Code TUI
 - `restart: unless-stopped`: automatic restart without blocking manual stops
-- `container_name: ${CONTAINER_NAME:-claude-code-dock}`: name driven by `.env`; scripts depend on a stable, known name
+- `container_name: ${CONTAINER_NAME:-claude-code-dock}`: name driven by `.env`; scripts depend on a stable, known name. The unset default is the flat literal `claude-code-dock`, **not** derived from `REMOTE_SESSION_NAME` — `install.sh` and `new-session.sh` both compensate by auto-writing `CONTAINER_NAME=claude-code-dock-<session>` into the `.env`/`.env.<session>` they generate, so the collision risk only surfaces for someone hand-editing `.env` per project folder (README's "Workflow A") who skips this var; `.env.example` calls that out explicitly. Deriving the default here from `REMOTE_SESSION_NAME` (Compose supports the nested `${VAR:-...${OTHER:-x}}` syntax already used below in `build.context`) was considered and rejected — every host-side script (`status.sh`, `logs.sh`, `attach.sh`, `shell.sh`, `claude.sh`, `remote.sh`, `watchdog.sh`) resolves its own target container name via a flat `${CONTAINER_NAME:-claude-code-dock}` fallback, not Compose's interpolation, so changing only this file's default would silently orphan every already-running container created under the old literal name and point the scripts at a name that doesn't exist yet — exactly the disruptive migration the bullet below warns against.
+- `- CONTAINER_NAME=${CONTAINER_NAME:-claude-code-dock}` in `environment:`: informational only, mirrors the literal above so `entrypoint.sh`'s startup banner can print the actual `docker exec` command for this container instead of a hardcoded name that's wrong whenever `CONTAINER_NAME` is set to anything else.
 - `image: ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest}` + `build:`: both present intentionally — `image:` is what `docker compose pull` (the default install/update path) fetches; `build:` is the fallback path used when `CLAUDE_SOURCE_PATH` is set or someone explicitly runs `docker compose build`. The registry/repo in `image:` is a hardcoded literal (not a variable) — only the tag is configurable, via `CLAUDE_DOCK_TAG` (default `latest`; set `stable` or a pinned `vX.Y.Z`). There is deliberately no var to repoint the registry/repo itself — nobody running this project needs to pull from a different fork's registry day-to-day, and `CLAUDE_SOURCE_PATH` already covers the "I'm working on claude-code-dock itself" case. `build.args` also passes `CLAUDE_DOCK_SOURCE_PATH` (raw `CLAUDE_SOURCE_PATH`) and `CLAUDE_DOCK_VERSION` through so the Dockerfile can bake which one was used into `/etc/claude-dock-build-source` — read by `entrypoint.sh`'s startup log and `scripts/status.sh`.
 - Because `image:` + `build:` coexist, Compose only builds when the tag isn't already present locally — a bare `docker compose up -d` will NOT rebuild an already-tagged image, even with `CLAUDE_SOURCE_PATH` set. `install.sh`/`update.sh` handle this correctly by explicitly calling `docker compose build --no-cache` whenever `CLAUDE_SOURCE_PATH` is set (never relying on `up -d` alone). Anyone bypassing the scripts must do the same: `docker compose build --no-cache && docker compose up -d`, or `docker compose up -d --build`. See `docs/docker.md#local-development`.
 - `- ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro` in `volumes:`: the "optional file mount" idiom — mounts the real host token file when `.env`'s `GITHUB_TOKEN_FILE` is set, or a harmless empty `/dev/null` when it's not, so this line is always present and always safe regardless of whether the operator configured a token. Paired with `- GITHUB_TOKEN_FILE=/run/secrets/github_token` in `environment:`, which is a **literal**, not `${GITHUB_TOKEN_FILE:-}` — the container always looks at this fixed convention path; the host-side `.env` value is only ever used for the volume mount source, never passed into the container directly.
@@ -772,7 +773,7 @@ Container restarts:
 Claude Code's login is **100% managed by the official Claude Code**. This project does not interfere with the process.
 
 When the user connects for the first time:
-1. `docker exec -it claude-code-dock tmux attach-session -t main` (or `./scripts/attach.sh`)
+1. `docker exec -it --user node claude-code-dock tmux attach-session -t main` (or `./scripts/attach.sh`)
 2. Claude Code detects the absence of credentials in `/home/node/.claude/`
 3. Claude Code displays the authentication prompt
 4. User follows the official authentication flow

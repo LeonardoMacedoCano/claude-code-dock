@@ -77,7 +77,7 @@ ok "Session '${SESSION_NAME}' started as container ${BOLD}${CONTAINER_NAME}${RES
 
 echo ""
 echo -e "  ${CYAN}To attach:${RESET}"
-echo -e "  ${BOLD}docker exec -it ${CONTAINER_NAME} tmux attach-session -t main${RESET}"
+echo -e "  ${BOLD}docker exec -it --user node ${CONTAINER_NAME} tmux attach-session -t main${RESET}"
 echo ""
 echo -e "  ${CYAN}To view status:${RESET}"
 echo -e "  ${BOLD}CONTAINER_NAME=${CONTAINER_NAME} ./scripts/status.sh${RESET}"

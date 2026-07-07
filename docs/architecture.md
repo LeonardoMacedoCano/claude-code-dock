@@ -155,13 +155,13 @@ tmux replaces entrypoint.sh as PID 1
 tmux starts Claude Code inside session "main"
         |
         v
-Container ready -- connect via: docker exec -it claude-code-dock tmux attach-session -t main
+Container ready -- connect via: docker exec -it --user node claude-code-dock tmux attach-session -t main
 ```
 
 ### User Connection
 
 ```
-User runs: docker exec -it claude-code-dock tmux attach-session -t main
+User runs: docker exec -it --user node claude-code-dock tmux attach-session -t main
         |
         v
 tmux connects the terminal to session "main" where Claude is running
