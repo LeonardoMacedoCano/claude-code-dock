@@ -43,6 +43,16 @@ if [ -f "${LOG_FILE}" ] && [ "$(wc -l < "${LOG_FILE}" 2>/dev/null || echo 0)" -g
     tail -n "${LOG_MAX_LINES}" "${LOG_FILE}" > "${LOG_FILE}.tmp" 2>/dev/null && mv "${LOG_FILE}.tmp" "${LOG_FILE}"
 fi
 
+# Read by scripts/watchdog.sh (via `docker exec ... test -f`) to tell "fatal()
+# fired this run" apart from a transient wedged tmux pane -- both report the
+# same `unhealthy` status, but only one of them is fixable by a restart.
+# Cleared unconditionally on every entrypoint run (including plain `docker
+# restart`, which re-executes this script but keeps the container's writable
+# layer, so a stale marker from a previous fatal() would otherwise survive
+# into a run that never calls fatal() again).
+FATAL_MARKER_FILE="${FATAL_MARKER_FILE:-/tmp/claude-dock-fatal}"
+rm -f "${FATAL_MARKER_FILE}" 2>/dev/null || true
+
 # Plain-text, ANSI-free copy of the setup steps below, persisted in the config
 # volume. docker logs / the Unraid "Logs" tab only shows this cleanly until
 # tmux takes over the tty; after that they render the raw terminal screen
@@ -95,6 +105,12 @@ fatal() {
     echo ""
 
     log_write "FATAL" "${title}: ${reason}"
+
+    # See FATAL_MARKER_FILE definition above: tells scripts/watchdog.sh that
+    # this container's `unhealthy` status is a persistent misconfiguration,
+    # not a wedged process -- restarting it again would just reproduce the
+    # same fatal() call instead of fixing anything.
+    touch "${FATAL_MARKER_FILE}" 2>/dev/null || true
 
     exec sleep infinity
 }

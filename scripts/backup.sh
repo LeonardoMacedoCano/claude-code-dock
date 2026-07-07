@@ -87,14 +87,28 @@ fail() {
 }
 
 load_env() {
-    CONFIG_BASE_PATH=""
-    REMOTE_SESSION_NAME=""
-    WORKSPACE_PATH=""
+    # Process env (already exported by the caller, cron, or a docker-compose
+    # env-file source) takes priority; .env on disk only fills in whatever
+    # isn't already set. This used to unconditionally reset these three to ""
+    # before ever looking at .env -- silently discarding an already-exported
+    # CONFIG_BASE_PATH/REMOTE_SESSION_NAME/WORKSPACE_PATH and falling back to
+    # the wrong (usually empty) ./configs/default. Same class of false
+    # negative CLAUDE.md documents for the GitHub-auth checks: ".env is not
+    # the only valid source" applies here too.
+    : "${CONFIG_BASE_PATH:=}"
+    : "${REMOTE_SESSION_NAME:=}"
+    : "${WORKSPACE_PATH:=}"
 
     if [ -f "${ENV_FILE}" ]; then
-        CONFIG_BASE_PATH=$(grep "^CONFIG_BASE_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
-        REMOTE_SESSION_NAME=$(grep "^REMOTE_SESSION_NAME=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
-        WORKSPACE_PATH=$(grep "^WORKSPACE_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+        if [ -z "${CONFIG_BASE_PATH}" ]; then
+            CONFIG_BASE_PATH=$(grep "^CONFIG_BASE_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+        fi
+        if [ -z "${REMOTE_SESSION_NAME}" ]; then
+            REMOTE_SESSION_NAME=$(grep "^REMOTE_SESSION_NAME=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+        fi
+        if [ -z "${WORKSPACE_PATH}" ]; then
+            WORKSPACE_PATH=$(grep "^WORKSPACE_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+        fi
     fi
 
     if [[ "${CONFIG_BASE_PATH}" == ./* ]]; then
@@ -160,10 +174,17 @@ backup_env() {
     # line whose key looks like a secret (…TOKEN…, …KEY…, …SECRET…,
     # …PASSWORD…, …PASSPHRASE…) so a new secret-like var doesn't need this
     # script updated to stay excluded from the plaintext .env copy.
+    #
+    # Second pass: also excludes lines whose *value* is a URL with
+    # credentials embedded (user:pass@host, e.g. GIT_REPO_URL set to
+    # https://user:ghp_xxx@github.com/... instead of the recommended separate
+    # GITHUB_TOKEN_FILE) -- a secret sitting in a variable name that doesn't
+    # look secret would otherwise slip through the name-based filter above.
     MASKED_ENV_TMPDIR=$(mktemp -d)
     grep -vE "^[A-Za-z_]*(TOKEN|KEY|SECRET|PASSWORD|PASSPHRASE)[A-Za-z_]*\s*=" "${ENV_FILE}" \
+        | grep -vE '=.*://[^/@[:space:]]+:[^/@[:space:]]+@' \
         > "${MASKED_ENV_TMPDIR}/.env.backup" 2>/dev/null || true
-    ok ".env backed up (secret-looking variables excluded — included in archive)"
+    ok ".env backed up (secret-looking variables and credential-embedded URLs excluded — included in archive)"
 }
 
 create_backup_archive() {

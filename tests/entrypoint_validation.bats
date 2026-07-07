@@ -74,3 +74,17 @@ teardown() {
   [ ! -f "$TEST_TMPDIR/sleep_called" ]
   [ -f "$TEST_TMPDIR/tmux_args" ]
 }
+
+@test "fatal() leaves a marker file for scripts/watchdog.sh to detect" {
+  export AUTO_START_MODE="not-a-real-mode"
+  run bash "$ENTRYPOINT"
+  [ -f "$TEST_TMPDIR/sleep_called" ]
+  [ -f "$FATAL_MARKER_FILE" ]
+}
+
+@test "a successful run clears any stale fatal marker from a prior run" {
+  touch "$FATAL_MARKER_FILE"
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+  [ ! -f "$FATAL_MARKER_FILE" ]
+}

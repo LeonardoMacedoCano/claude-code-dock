@@ -39,8 +39,16 @@ usage() {
     echo ""
     echo "    */5 * * * * ${SCRIPT_DIR}/watchdog.sh >> ${PROJECT_DIR}/watchdog.log 2>&1"
     echo ""
+    echo "  An 'unhealthy' container that entrypoint.sh's fatal() put into"
+    echo "  'sleep infinity' (invalid AUTO_START_MODE, unwritable config/workspace)"
+    echo "  is skipped, not restarted -- that state is a persistent misconfiguration"
+    echo "  a restart can't fix, and restarting it anyway would just recreate the"
+    echo "  same fatal() call every cycle, i.e. the exact restart loop fatal()"
+    echo "  exists to avoid. Check 'docker logs <container>' for the fix instead."
+    echo ""
     echo "  Exit codes: 0 = healthy/starting/no-healthcheck (no action needed)"
     echo "              0 = unhealthy, restart succeeded"
+    echo "              0 = unhealthy due to a fatal() misconfiguration, skipped"
     echo "              1 = container not found, or restart failed"
 }
 
@@ -63,6 +71,18 @@ fi
 
 case "${STATUS}" in
     unhealthy)
+        # entrypoint.sh's fatal() leaves this marker before parking PID 1 on
+        # `sleep infinity` -- that's a persistent misconfiguration (invalid
+        # AUTO_START_MODE, unwritable config/workspace dir), not a wedged
+        # process, and restarting won't fix it. Restarting anyway would just
+        # reproduce the same fatal() call next cycle, recreating the restart
+        # loop fatal() was specifically built to avoid.
+        if docker exec "${CONTAINER_NAME}" test -f /tmp/claude-dock-fatal 2>/dev/null; then
+            warn "${CONTAINER_NAME} is unhealthy due to a fatal startup misconfiguration, not a wedged process — restarting would not fix it."
+            echo -e "    Check: docker logs ${CONTAINER_NAME}"
+            exit 0
+        fi
+
         warn "${CONTAINER_NAME} is unhealthy — restarting..."
         step "docker restart ${CONTAINER_NAME}"
         if docker restart "${CONTAINER_NAME}" &>/dev/null; then

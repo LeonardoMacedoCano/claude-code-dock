@@ -360,6 +360,7 @@ tmux new-session -s main claude --dangerously-skip-permissions
 5. Use `set -e` to fail fast on critical errors
 6. Respect `AUTO_START_MODE` and `CLAUDE_EXTRA_ARGS`
 7. New mandatory-config checks belong in `validate_config()`, called right after the `claude` binary check and before any mutation (symlinks, git config, settings.json) — fail via `fatal()`, not a bare `exit`
+8. `fatal()`'s `sleep infinity` still makes the Dockerfile `HEALTHCHECK` report `unhealthy` (no tmux session was ever created), so `fatal()` touches `FATAL_MARKER_FILE` (default `/tmp/claude-dock-fatal`, overridable for tests) right before parking PID 1. `scripts/watchdog.sh` checks this marker via `docker exec` and skips restarting when it's present — otherwise an external watchdog reacting to that same `unhealthy` status would restart the container every cycle, recreating the exact loop `fatal()` exists to avoid. The marker is `rm -f`'d unconditionally at the top of the script on every run (including a plain `docker restart`, which re-execs this script but keeps the container's writable layer) so a stale marker from a past fatal run never survives into a run that didn't hit `fatal()` again.
 
 **Required flow:**
 ```
@@ -432,9 +433,13 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 - `./workspaces/` (local workspace) — included if not empty
 - External workspace — only with `--include-workspace`
 
+**Resolving `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME`/`WORKSPACE_PATH` (`load_env()`):** an already-exported process env var takes priority; `.env` on disk is only consulted for whatever isn't already set — same "`.env` is not the only valid source" principle as the GitHub-auth checks earlier in this file. Do not reintroduce an unconditional reset of these three to `""` before reading `.env` — that was a real bug: it silently discarded an already-exported value and fell back to the wrong (usually empty) `./configs/default`, backing up nothing while looking like it succeeded.
+
 **Naming:** `claude-code-dock-backup-YYYY-MM-DD_HH-MM-SS.tar.gz`
 
 **Retention:** Automatically keeps only the 10 most recent backups.
+
+**`.env` masking (`backup_env()`):** two passes. First excludes any line whose *variable name* looks like a secret (`…TOKEN…`, `…KEY…`, `…SECRET…`, `…PASSWORD…`, `…PASSPHRASE…`). Second excludes any line whose *value* is a URL with credentials embedded (`user:pass@host` — e.g. someone setting `GIT_REPO_URL=https://user:ghp_xxx@github.com/...` instead of the recommended separate `GITHUB_TOKEN_FILE`), which the name-based pass alone would miss since `GIT_REPO_URL` doesn't look like a secret-named variable.
 
 **Encryption (`--encrypt`):** Pipes the finished `.tar.gz` through `gpg --symmetric --cipher-algo AES256`, producing a `.tar.gz.gpg` and removing the plaintext archive. Passphrase source, in order: `BACKUP_ENCRYPT_PASSPHRASE` env var (e.g. set in `.env`, non-interactive — for cron use) or an interactive `gpg` prompt if unset. Requires `gpg` on the host (not the container) since backups are host-side files.
 
@@ -512,12 +517,14 @@ Set `AUTO_START_MODE=remote` in `.env`.
 
 **Behavior:**
 1. Reads `Health.Status` via `docker inspect --format '{{.State.Health.Status}}' <container>`.
-2. If `unhealthy`, runs `docker restart <container>` and logs it; any other status (`healthy`, `starting`, or no healthcheck configured) is a no-op.
-3. Takes the container name as `$1`, defaulting to `${CONTAINER_NAME:-claude-code-dock}` from `.env` like the other scripts.
+2. If `unhealthy`, first checks `docker exec <container> test -f /tmp/claude-dock-fatal` — if that marker is present, `entrypoint.sh`'s `fatal()` is what parked PID 1, meaning this is a persistent misconfiguration (invalid `AUTO_START_MODE`, unwritable config/workspace dir), not a wedged process. A restart can't fix it, so the script warns and skips instead (exit 0 either way) — restarting anyway would just recreate the loop `fatal()` exists to avoid. Otherwise it runs `docker restart <container>` and logs it.
+3. Any other status (`healthy`, `starting`, or no healthcheck configured) is a no-op.
+4. Takes the container name as `$1`, defaulting to `${CONTAINER_NAME:-claude-code-dock}` from `.env` like the other scripts.
 
 **Must not:**
 - Restart on `starting` (still within `--start-period`) — only `unhealthy` triggers a restart
 - Assume the container has a healthcheck at all — a missing one reports empty status, treated as a no-op, not an error
+- Restart an `unhealthy` container that has the `/tmp/claude-dock-fatal` marker — see behavior #2 above
 
 ---
 

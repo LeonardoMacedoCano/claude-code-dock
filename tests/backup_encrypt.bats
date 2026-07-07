@@ -10,6 +10,11 @@ setup() {
     skip "gpg not available"
   fi
 
+  # See tests/backup_retention.bats setup() for why: backup.sh now honors an
+  # already-exported CONFIG_BASE_PATH/REMOTE_SESSION_NAME/WORKSPACE_PATH over
+  # .env, so these must not leak in from the ambient shell running the suite.
+  unset CONFIG_BASE_PATH REMOTE_SESSION_NAME WORKSPACE_PATH
+
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
 

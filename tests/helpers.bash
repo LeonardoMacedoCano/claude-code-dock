@@ -16,6 +16,10 @@ setup_entrypoint_env() {
   export HOME="$MOCK_HOME"
   export WORKSPACE_DIR="$MOCK_WORKSPACE"
   export BUILD_SOURCE_FILE="$TEST_TMPDIR/no-build-source-marker"
+  # Isolates the fatal() marker under TEST_TMPDIR -- without this override,
+  # entrypoint.sh would rm/touch the real /tmp/claude-dock-fatal on whatever
+  # host happens to be running this test suite.
+  export FATAL_MARKER_FILE="$TEST_TMPDIR/fatal-marker"
   export PATH="$MOCK_BIN:$PATH"
 
   export AUTO_START_MODE="interactive"

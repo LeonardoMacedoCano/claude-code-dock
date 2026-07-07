@@ -6,6 +6,14 @@ BACKUP_SCRIPT="$PROJECT_ROOT/scripts/backup.sh"
 SESSION="test-session"
 
 setup() {
+  # backup.sh now honors an already-exported CONFIG_BASE_PATH/
+  # REMOTE_SESSION_NAME/WORKSPACE_PATH over .env (see load_env() fix) -- so
+  # these tests must not inherit whatever the ambient shell running the suite
+  # happens to have set (e.g. this very suite can run inside a
+  # claude-code-dock container, which exports exactly these three), or the
+  # test's own throwaway .env would be silently ignored.
+  unset CONFIG_BASE_PATH REMOTE_SESSION_NAME WORKSPACE_PATH
+
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
 
@@ -109,6 +117,42 @@ _create_old_backups() {
   tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR" .env.backup 2>/dev/null
   [ -f "$EXTRACT_DIR/.env.backup" ]
   run grep -E "^(SOME_SERVICE_TOKEN|EXAMPLE_API_KEY|SOME_SECRET|SOME_PASSWORD|SOME_PASSPHRASE)=" "$EXTRACT_DIR/.env.backup"
+  [ "$status" -ne 0 ]
+  grep -q "^TZ=UTC" "$EXTRACT_DIR/.env.backup"
+  rm -rf "$EXTRACT_DIR"
+}
+
+@test "process-exported CONFIG_BASE_PATH/REMOTE_SESSION_NAME are honored even without a matching .env file" {
+  rm -f "$TMP_PROJECT/.env"
+  mkdir -p "$TMP_PROJECT/other-configs/$SESSION"
+  echo '{"skipDangerousModePermissionPrompt":true}' > "$TMP_PROJECT/other-configs/$SESSION/settings.json"
+
+  export CONFIG_BASE_PATH="$TMP_PROJECT/other-configs"
+  export REMOTE_SESSION_NAME="$SESSION"
+
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+
+  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  [ -n "$ARCHIVE" ]
+  tar -tzf "$ARCHIVE" | grep -q "${SESSION}/settings.json"
+
+  unset CONFIG_BASE_PATH REMOTE_SESSION_NAME
+}
+
+@test "excludes credential-embedded URLs (e.g. GIT_REPO_URL with an inline token) from .env backup" {
+  printf 'GIT_REPO_URL=https://x-access-token:ghp_secrettoken@github.com/user/repo.git\nTZ=UTC\nCONFIG_BASE_PATH=./configs\nREMOTE_SESSION_NAME=%s\n' "$SESSION" > "$TMP_PROJECT/.env"
+
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+
+  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  [ -n "$ARCHIVE" ]
+
+  EXTRACT_DIR="$(mktemp -d)"
+  tar -xzf "$ARCHIVE" -C "$EXTRACT_DIR" .env.backup 2>/dev/null
+  [ -f "$EXTRACT_DIR/.env.backup" ]
+  run grep -q "ghp_secrettoken" "$EXTRACT_DIR/.env.backup"
   [ "$status" -ne 0 ]
   grep -q "^TZ=UTC" "$EXTRACT_DIR/.env.backup"
   rm -rf "$EXTRACT_DIR"

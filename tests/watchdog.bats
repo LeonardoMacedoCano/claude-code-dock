@@ -38,6 +38,27 @@ DOCKEREOF
   [[ "$output" == *"restarted"* ]]
 }
 
+@test "unhealthy container with a fatal marker is skipped, not restarted" {
+  cat > "$MOCK_BIN/docker" << 'DOCKEREOF'
+#!/bin/bash
+ARGS="$*"
+case "$ARGS" in
+  *"inspect --format {{.State.Health.Status}}"*) echo "unhealthy"; exit 0 ;;
+  *"inspect fake-container"*) exit 0 ;;
+  *"exec fake-container test -f /tmp/claude-dock-fatal"*) exit 0 ;;
+  *"restart"*) echo "restarted $2"; exit 0 ;;
+esac
+exit 1
+DOCKEREOF
+  chmod +x "$MOCK_BIN/docker"
+
+  run bash "$WATCHDOG_SCRIPT" fake-container
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"unhealthy"* ]]
+  [[ "$output" == *"fatal startup misconfiguration"* ]]
+  [[ "$output" != *"restarted"* ]]
+}
+
 @test "healthy container is left alone" {
   _mock_docker "healthy"
   run bash "$WATCHDOG_SCRIPT" fake-container
