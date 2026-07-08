@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 COMPOSE_FILE="${PROJECT_DIR}/docker-compose.yml"
+OVERRIDE_FILE="${PROJECT_DIR}/docker-compose.override.yml"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -36,6 +37,40 @@ detect_compose() {
     fi
 }
 
+# docker-compose.override.yml is Compose's own auto-loaded override filename
+# -- generating/removing it here (instead of branching CLAUDE_SOURCE_PATH
+# inside docker-compose.yml itself) keeps the base compose file free of any
+# need to leak the raw host path into fields like image/pull_policy. Once
+# this file exists on disk, ANY `docker compose` invocation from this same
+# directory picks it up automatically, not just this script.
+#
+# NOTE: this file lives at the project root, shared by every session's
+# .env.<session> -- it always reflects whichever session was started last
+# via this script. Running two sessions from the same checkout with
+# different CLAUDE_SOURCE_PATH values at the same time isn't supported by
+# this mechanism; each `session-up.sh` run re-syncs it to match the session
+# being started.
+sync_override_file() {
+    local source_path
+    source_path=$(grep "^CLAUDE_SOURCE_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+    if [ -n "${source_path}" ]; then
+        cat > "${OVERRIDE_FILE}" <<'YAML'
+services:
+  claude-code-dock:
+    image: claude-code-dock:local
+    pull_policy: build
+YAML
+        ok "docker-compose.override.yml written — every 'docker compose up' from this directory now always builds from CLAUDE_SOURCE_PATH."
+    elif [ -f "${OVERRIDE_FILE}" ]; then
+        rm -f "${OVERRIDE_FILE}"
+        ok "docker-compose.override.yml removed — back to pulling the published image."
+    fi
+    COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
+    if [ -f "${OVERRIDE_FILE}" ]; then
+        COMPOSE_FILE_ARGS+=(-f "${OVERRIDE_FILE}")
+    fi
+}
+
 header
 
 SESSION_NAME="${1:-}"
@@ -64,14 +99,43 @@ if [ ! -f "${ENV_FILE}" ]; then
 fi
 
 detect_compose
+sync_override_file
+
+CONTAINER_NAME=$(grep "^CONTAINER_NAME=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock-${SESSION_NAME}}"
 
 step "Starting session '${SESSION_NAME}'..."
 
 cd "${PROJECT_DIR}"
-${COMPOSE_CMD} --env-file "${ENV_FILE}" -p "claude-${SESSION_NAME}" -f "${COMPOSE_FILE}" up -d
 
-CONTAINER_NAME=$(grep "^CONTAINER_NAME=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
-CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock-${SESSION_NAME}}"
+# Captured instead of streamed so a name conflict (the #1 cause of a
+# confusing-looking failure right after a clean build/pull) can be caught
+# and re-worded before the user ever sees Docker's raw daemon error.
+up_output=""
+up_status=0
+up_output="$(${COMPOSE_CMD} --env-file "${ENV_FILE}" -p "claude-${SESSION_NAME}" "${COMPOSE_FILE_ARGS[@]}" up -d 2>&1)" || up_status=$?
+
+if [ "${up_status}" -ne 0 ]; then
+    if echo "${up_output}" | grep -q "is already in use by container"; then
+        echo ""
+        warn "CONTAINER_NAME \"${CONTAINER_NAME}\" is already in use by another container."
+        echo ""
+        echo -e "  This is a configuration issue, not a startup failure — a container"
+        echo -e "  with this exact name already exists, almost always because"
+        echo -e "  .env.${SESSION_NAME} was copied from another session without changing"
+        echo -e "  CONTAINER_NAME to something unique."
+        echo ""
+        echo -e "  ${BOLD}To fix:${RESET}"
+        echo -e "  1. Edit .env.${SESSION_NAME} and set a unique value, e.g.:"
+        echo -e "     ${BOLD}CONTAINER_NAME=${CONTAINER_NAME}-2${RESET}"
+        echo -e "  2. Run ${BOLD}./scripts/session-up.sh ${SESSION_NAME}${RESET} again."
+        echo ""
+        fail "Aborted — fix CONTAINER_NAME in .env.${SESSION_NAME} and re-run."
+    fi
+
+    echo "${up_output}" >&2
+    fail "docker compose up failed. See output above."
+fi
 
 ok "Session '${SESSION_NAME}' started as container ${BOLD}${CONTAINER_NAME}${RESET}."
 

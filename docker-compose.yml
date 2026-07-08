@@ -5,6 +5,16 @@ services:
     # local dev, or explicit `docker compose build`). Both intentional — see
     # CLAUDE.md#docker-composeyml for the full rationale, including the
     # `docker compose up -d --build` gotcha with CLAUDE_SOURCE_PATH.
+    #
+    # That gotcha (a plain `up -d` won't rebuild if a matching image tag
+    # already exists locally) is why install.sh/update.sh/session-up.sh
+    # generate a docker-compose.override.yml next to this file whenever
+    # CLAUDE_SOURCE_PATH is set -- Compose auto-loads it from any invocation
+    # run in this directory, overriding image/pull_policy to always build
+    # from CLAUDE_SOURCE_PATH into a dedicated local tag. Deliberately not
+    # expressed as `${CLAUDE_SOURCE_PATH:-x}` interpolation here in the base
+    # file -- that would leak the raw host path into image/pull_policy,
+    # which don't tolerate arbitrary content (breaks on `/`).
     image: ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest}
     build:
       context: ${CLAUDE_SOURCE_PATH:-https://github.com/LeonardoMacedoCano/claude-code-dock.git#${CLAUDE_DOCK_VERSION:-main}}

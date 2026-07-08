@@ -53,6 +53,13 @@ logs/
 .docker/
 
 # -----------------------------------------------------------------------------
+# Gerado automaticamente por install.sh/update.sh/session-up.sh quando
+# CLAUDE_SOURCE_PATH está setado (ver docker-compose.yml) — nunca commitar,
+# o conteúdo é derivado do .env local, não configuração do projeto.
+# -----------------------------------------------------------------------------
+docker-compose.override.yml
+
+# -----------------------------------------------------------------------------
 # Sistemas operacionais
 # -----------------------------------------------------------------------------
 

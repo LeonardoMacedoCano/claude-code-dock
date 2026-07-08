@@ -257,29 +257,22 @@ in `.env` to your local clone (e.g. `CLAUDE_SOURCE_PATH=.`). This is the
 highest-priority source: when set, it always wins over `CLAUDE_DOCK_TAG`
 (prebuilt pull) and `CLAUDE_DOCK_VERSION` (GitHub ref) — both are ignored.
 
-`./scripts/install.sh` and `./scripts/update.sh` detect `CLAUDE_SOURCE_PATH`
-and automatically switch to `docker compose build --no-cache`, so your local
-folder is guaranteed to be what actually gets built — never a stale image
-already tagged locally, and never GitHub.
+`./scripts/install.sh`, `./scripts/update.sh`, and `./scripts/session-up.sh`
+detect `CLAUDE_SOURCE_PATH` and generate a `docker-compose.override.yml` next
+to `docker-compose.yml` (removing it again if you unset `CLAUDE_SOURCE_PATH`
+later). Compose auto-loads that file for *any* invocation run from this
+directory — not just these scripts — overriding `image`/`pull_policy` so the
+service always builds fresh from `CLAUDE_SOURCE_PATH` into its own dedicated
+tag, never silently reusing whatever was already tagged locally (e.g. from an
+earlier `docker compose pull`), and never touching GitHub.
 
-If you run `docker compose` commands directly instead of the scripts, you
-must force that same guarantee yourself. `docker-compose.yml` declares both
-`image:` and `build:` on the service (needed so `docker compose pull` still
-works for everyone else) — which means Compose only builds when the image tag
-doesn't already exist locally. A bare `docker compose up -d` will silently
-reuse whatever is already tagged there (e.g. from an earlier `docker compose
-pull`) and ignore your `CLAUDE_SOURCE_PATH` changes entirely:
-
-```bash
-# Correct — forces a fresh build from CLAUDE_SOURCE_PATH every time:
-docker compose build --no-cache && docker compose up -d
-# or the equivalent one-liner:
-docker compose up -d --build
-
-# Wrong when testing local changes — reuses whatever image is already
-# tagged locally instead of rebuilding, if one exists:
-docker compose up -d
-```
+This means a bare `docker compose up -d`, or a third-party tool that doesn't
+know this project's scripts (e.g. Unraid's Compose Manager plugin), also
+gets the correct behavior automatically — as long as it runs from the same
+directory as `docker-compose.yml`/`docker-compose.override.yml` (a tool that
+copies the compose file elsewhere before running it won't see the override;
+in that case, run one of the three scripts above first to generate it, or
+force it manually: `docker compose build --no-cache && docker compose up -d`).
 
 To confirm which source is actually running, check the container's startup
 log (`./scripts/logs.sh --app`, look for the `Build source:` line) or run

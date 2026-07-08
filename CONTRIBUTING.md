@@ -29,10 +29,10 @@ for the full reasoning.
    ```
    This always wins over `CLAUDE_DOCK_TAG`/`CLAUDE_DOCK_VERSION` when set —
    see [docs/docker.md#local-development](docs/docker.md#local-development)
-   for the one gotcha (`docker compose up -d` alone won't rebuild; use
-   `docker compose build --no-cache && docker compose up -d`, or
-   `docker compose up -d --build`).
-4. Build and start:
+   for how this stays true even for a later plain `docker compose up -d`.
+4. Build and start — `./scripts/install.sh` detects `CLAUDE_SOURCE_PATH` and
+   handles the build correctly on its own. Running `docker compose` directly
+   instead? Force it explicitly the first time:
    ```bash
    docker compose build --no-cache
    docker compose up -d

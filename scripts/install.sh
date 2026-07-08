@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 COMPOSE_FILE="${PROJECT_DIR}/docker-compose.yml"
+OVERRIDE_FILE="${PROJECT_DIR}/docker-compose.override.yml"
 ENV_FILE="${PROJECT_DIR}/.env"
 ENV_EXAMPLE="${PROJECT_DIR}/.env.example"
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
@@ -59,6 +60,32 @@ fix_ownership() {
         warn "Could not chown ${dir} to ${target_uid}:${target_gid} (not root, or unsupported filesystem)."
         echo -e "    If the container fails to start with a 'not writable' error, run manually:"
         echo -e "    ${BOLD}chown -R ${target_uid}:${target_gid} ${dir}${RESET}"
+    fi
+}
+
+# docker-compose.override.yml is Compose's own auto-loaded override filename
+# -- generating/removing it here (instead of branching CLAUDE_SOURCE_PATH
+# inside docker-compose.yml itself, via `${VAR:-x}` interpolation) keeps the
+# base compose file free of any need to leak the raw host path into fields
+# like image/pull_policy that don't tolerate arbitrary content (breaks on
+# '/'). Once this file exists on disk, ANY `docker compose` invocation from
+# this same directory picks it up automatically -- not just this script --
+# including a bare `docker compose up -d` run by a tool that doesn't know
+# this project's conventions (e.g. Unraid's Compose Manager plugin, as long
+# as it also runs from this directory rather than a copy of the compose
+# file elsewhere). See docker-compose.yml's own comment for what's inside it.
+sync_override_file() {
+    if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then
+        cat > "${OVERRIDE_FILE}" <<'YAML'
+services:
+  claude-code-dock:
+    image: claude-code-dock:local
+    pull_policy: build
+YAML
+        ok "docker-compose.override.yml written — every 'docker compose up' from this directory now always builds from CLAUDE_SOURCE_PATH."
+    elif [ -f "${OVERRIDE_FILE}" ]; then
+        rm -f "${OVERRIDE_FILE}"
+        ok "docker-compose.override.yml removed — back to pulling the published image."
     fi
 }
 
@@ -187,6 +214,12 @@ check_env() {
         ok "Will pull ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest} (falls back to building from GitHub ref ${CLAUDE_DOCK_VERSION:-main} only if the pull fails)"
     fi
 
+    sync_override_file
+    COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
+    if [ -f "${OVERRIDE_FILE}" ]; then
+        COMPOSE_FILE_ARGS+=(-f "${OVERRIDE_FILE}")
+    fi
+
     case "${AUTO_START_MODE:-interactive}" in
         interactive|remote|shell) ;;
         *)
@@ -212,19 +245,19 @@ build_image() {
         echo ""
         # --no-cache: CLAUDE_SOURCE_PATH must always win, with no dependency on
         # a stale image already tagged locally or on Docker's layer cache.
-        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
+        ${COMPOSE_CMD} "${COMPOSE_FILE_ARGS[@]}" build --no-cache
         ok "Image built successfully from local source."
         return
     fi
 
     step "BUILD SOURCE: prebuilt GHCR image (ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest})"
     echo ""
-    if ${COMPOSE_CMD} -f "${COMPOSE_FILE}" pull; then
+    if ${COMPOSE_CMD} "${COMPOSE_FILE_ARGS[@]}" pull; then
         ok "Image pulled successfully."
     else
         warn "Pull failed — BUILD SOURCE: GitHub (${CLAUDE_DOCK_VERSION:-main}), this may take a few minutes..."
         echo ""
-        ${COMPOSE_CMD} -f "${COMPOSE_FILE}" build --no-cache
+        ${COMPOSE_CMD} "${COMPOSE_FILE_ARGS[@]}" build --no-cache
         ok "Image built successfully from GitHub."
     fi
 }
@@ -244,7 +277,36 @@ start_services() {
     step "Starting claude-code-dock..."
 
     cd "${PROJECT_DIR}"
-    ${COMPOSE_CMD} -f "${COMPOSE_FILE}" up -d
+
+    # Captured instead of streamed so a name conflict (the #1 cause of a
+    # confusing-looking failure right after a successful build/pull) can be
+    # caught and re-worded before the user ever sees Docker's raw daemon
+    # error -- see the grep below.
+    local up_output
+    local up_status=0
+    up_output="$(${COMPOSE_CMD} "${COMPOSE_FILE_ARGS[@]}" up -d 2>&1)" || up_status=$?
+
+    if [ "${up_status}" -ne 0 ]; then
+        if echo "${up_output}" | grep -q "is already in use by container"; then
+            echo ""
+            warn "CONTAINER_NAME \"${CONTAINER_NAME}\" is already in use by another container."
+            echo ""
+            echo -e "  This is a configuration issue, not a build problem — the image built"
+            echo -e "  (or pulled) fine. A container with this exact name already exists,"
+            echo -e "  almost always because .env was copied from another session/project"
+            echo -e "  without changing CONTAINER_NAME to something unique."
+            echo ""
+            echo -e "  ${BOLD}To fix:${RESET}"
+            echo -e "  1. Edit .env and set a unique value, e.g.:"
+            echo -e "     ${BOLD}CONTAINER_NAME=${CONTAINER_NAME}-2${RESET}"
+            echo -e "  2. Run ${BOLD}./scripts/install.sh${RESET} again."
+            echo ""
+            fail "Aborted — fix CONTAINER_NAME in .env and re-run."
+        fi
+
+        echo "${up_output}" >&2
+        fail "docker compose up failed. See output above."
+    fi
 
     ok "Container started."
 
