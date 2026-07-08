@@ -438,12 +438,20 @@ case "${MODE}" in
 esac
 
 if [ -n "${CLAUDE_EXTRA_ARGS:-}" ]; then
-    # Quote-aware split via eval: a quoted substring survives as one argument
-    # (e.g. CLAUDE_EXTRA_ARGS='--append-system-prompt "be terse"'). Safe here
-    # because CLAUDE_EXTRA_ARGS is operator-controlled config, the same trust
-    # level as GIT_REPO_URL or GITHUB_TOKEN_FILE, not untrusted external input.
+    # Quote-aware split without eval: xargs understands single/double quotes
+    # for grouping (so `--append-system-prompt "be terse"` survives as one
+    # argument) but, unlike eval, never expands $(...), `...`, ~, or globs --
+    # a value that happens to contain shell metacharacters is only ever
+    # passed through as literal text, never executed. `-n1` makes xargs
+    # invoke `printf '%s\n'` once per parsed word, one per output line, which
+    # mapfile below reassembles into the array. A non-zero xargs exit (e.g.
+    # unmatched quote) falls back to plain whitespace splitting instead of
+    # aborting startup.
     EXTRA_ARRAY=()
-    if ! eval "EXTRA_ARRAY=(${CLAUDE_EXTRA_ARGS})" 2>/dev/null; then
+    EXTRA_SPLIT=""
+    if EXTRA_SPLIT="$(printf '%s' "${CLAUDE_EXTRA_ARGS}" | xargs -n1 printf '%s\n' 2>/dev/null)"; then
+        [ -n "${EXTRA_SPLIT}" ] && mapfile -t EXTRA_ARRAY <<< "${EXTRA_SPLIT}"
+    else
         log_warn "CLAUDE_EXTRA_ARGS has unbalanced quotes — falling back to plain whitespace splitting."
         read -ra EXTRA_ARRAY <<< "${CLAUDE_EXTRA_ARGS}"
     fi

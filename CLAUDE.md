@@ -74,7 +74,7 @@ Not just running the project — modifying claude-code-dock itself and needs the
 | Git push / private-repo pull | `GITHUB_TOKEN_FILE` | Silent no-op — `git push`/private `git pull` just fails at git's own auth layer |
 | Auto-clone into `/workspace` on first start | `GIT_REPO_URL` | Silent no-op; also skipped (not an error) if `/workspace` is already non-empty |
 | `--dangerously-skip-permissions` | `CLAUDE_AUTO_APPROVE=true` | Applied via `settings.json`; defaults to `false` |
-| Extra Claude CLI flags | `CLAUDE_EXTRA_ARGS` | Silent no-op when unset; malformed quoting warns and falls back to plain splitting |
+| Extra Claude CLI flags | `CLAUDE_EXTRA_ARGS` | Silent no-op when unset; malformed quoting warns and falls back to plain splitting; parsed via `xargs`, not `eval` — no shell expansion |
 | Remap container user off UID/GID 1000 | `PUID`/`PGID` | Validated — `0` or non-integer is `fatal()` |
 | Shared `CLAUDE.md`/commands across sessions | `SHARED_CONFIG_PATH` | Silent no-op when unset |
 | Build from local clone instead of pulling | `CLAUDE_SOURCE_PATH` | Not validated by the container itself; `install.sh`/`update.sh` enforce the correct build path, manual `docker compose up -d` does not |
@@ -282,7 +282,7 @@ volumes:
 | `PGID` | `1000` | GID counterpart to `PUID` |
 | `AUTO_START_MODE` | `interactive` | Execution mode: `interactive`, `remote`, `shell` |
 | `CLAUDE_AUTO_APPROVE` | `false` | Enables `--dangerously-skip-permissions` (interactive/remote modes) |
-| `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command. Parsed with quote-aware splitting (`eval`-based), so a quoted substring with spaces survives as one argument |
+| `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command. Parsed with quote-aware splitting via `xargs` (not `eval`), so a quoted substring with spaces survives as one argument and shell metacharacters ($(...), backticks, globs) are never expanded |
 | `GITHUB_TOKEN_FILE` | `` | HOST path to a file holding the GitHub token — `docker-compose.yml` auto-mounts it read-only to the fixed in-container path `/run/secrets/github_token` |
 | `CLAUDE_DOCK_TAG` | `latest` | Published tag `docker compose pull` fetches by default (`latest`, `stable`, or a pinned `vX.Y.Z`). Registry/repo are hardcoded in `docker-compose.yml`, not configurable |
 | `CLAUDE_DOCK_VERSION` | `main` | Branch/tag to build from when not pulling the prebuilt image (build context ref) |
@@ -816,7 +816,7 @@ What is NOT exposed:
 
 3. **Shell mode and restart policy:** With `AUTO_START_MODE=shell`, the container restarts after the user types `exit` from bash (restart: unless-stopped). This is expected behavior.
 
-4. **CLAUDE_EXTRA_ARGS parsing:** The variable is parsed with quote-aware splitting (`eval`-based, see `docker/entrypoint.sh`), so a quoted substring survives as a single argument (e.g. `CLAUDE_EXTRA_ARGS=--append-system-prompt "be terse"`). Since it goes through `eval`, treat it like any other operator-controlled config value — it is not a place to interpolate untrusted input.
+4. **CLAUDE_EXTRA_ARGS parsing:** The variable is parsed with quote-aware splitting via `xargs -n1` (see `docker/entrypoint.sh`), so a quoted substring survives as a single argument (e.g. `CLAUDE_EXTRA_ARGS=--append-system-prompt "be terse"`). Unlike the earlier `eval`-based implementation, `xargs` never expands `$(...)`, backticks, `~`, or globs — a value containing shell metacharacters is only ever passed through as literal text, never executed. A non-zero `xargs` exit (unmatched quote) falls back to plain whitespace splitting with a warning rather than aborting startup.
 
 ---
 
