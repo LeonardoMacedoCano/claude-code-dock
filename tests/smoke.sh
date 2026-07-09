@@ -67,6 +67,12 @@ test_mode() {
 
     log "Testing AUTO_START_MODE=${mode}..."
     mkdir -p "${mode_dir}/workspace" "${mode_dir}/config"
+    # The container always runs as uid/gid 1000 here (no PUID/PGID set
+    # below), but the host user creating these dirs varies by CI runner
+    # image (e.g. GitHub's ubuntu-24.04 runner user is uid 1001, not 1000)
+    # and by whoever runs this locally. chmod instead of chown so this works
+    # without root/sudo either way -- these are throwaway dirs under mktemp.
+    chmod 0777 "${mode_dir}/workspace" "${mode_dir}/config"
 
     if ! docker run -d --name "${name}" \
             -e AUTO_START_MODE="${mode}" \
