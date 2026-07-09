@@ -24,6 +24,20 @@ ARG CACHEBUST=1
 # the base node:lts-bookworm image (not just the ones we explicitly install
 # below) -- without it, CVEs patched upstream but not yet in this base image
 # layer keep failing the Trivy scan step in CI on every rebuild.
+#
+# Trade-off, stated explicitly: this is a full `apt-get upgrade`, not scoped
+# to the security suite only, and it is forced fresh on every build via
+# CACHEBUST (see below). That means the exact set of Debian package versions
+# in a given image tag is NOT reproducible across rebuilds -- two builds of
+# the same claude-code-dock commit, a week apart, can legitimately contain
+# different apt package versions. This is a deliberate choice of
+# freshness/security over bit-for-bit reproducibility: pinning package
+# versions would make builds reproducible but would also mean this image
+# stops receiving Debian security patches until someone manually bumps the
+# pin. If you need a reproducible build for auditing, pin to a specific
+# published image digest (`docker pull ...@sha256:...`) rather than a moving
+# tag -- that image's package set is then fixed, even though future rebuilds
+# of the same source won't match it exactly.
 RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
     apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     bash \
