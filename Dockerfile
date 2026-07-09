@@ -59,6 +59,7 @@ RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
     procps \
     less \
     jq \
+    tzdata \
     && dpkg -l > /etc/claude-dock-packages.list \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

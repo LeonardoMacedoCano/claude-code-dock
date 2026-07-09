@@ -21,24 +21,42 @@
 # status after it fails, which errexit would short-circuit.
 set -uo pipefail
 
+# Same file entrypoint.sh writes to (${HOME}/.claude/logs/dock.log) -- this
+# script runs *after* entrypoint.sh has already exec'd into tmux, so its own
+# stdout/stderr goes to the tmux pane, not `docker logs`. Without also
+# writing here, the --continue/retry decision below would be invisible to
+# anyone who isn't attached live, which is exactly the "why did the remote
+# session not show up" gap this script's retry logic can silently fall into.
+LOG_FILE="${HOME}/.claude/logs/dock.log"
+log() {
+    { printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "REMOTE" "$1" >> "${LOG_FILE}"; } 2>/dev/null || true
+}
+
 FAST_FAIL_THRESHOLD=15
 HISTORY_DIR="${HOME}/.claude/projects/$(pwd | tr '/' '-')"
 
 if compgen -G "${HISTORY_DIR}/*.jsonl" > /dev/null 2>&1; then
+    log "Resumable conversation found in ${HISTORY_DIR} -- attempting 'claude --continue'."
     START_TS=$(date +%s)
     claude "$@" --continue
     STATUS=$?
     ELAPSED=$(( $(date +%s) - START_TS ))
 
     if [ "${STATUS}" -eq 0 ]; then
+        log "'claude --continue' exited 0 after ${ELAPSED}s (normal session end, e.g. user exited)."
         exit 0
     fi
 
     if [ "${ELAPSED}" -ge "${FAST_FAIL_THRESHOLD}" ]; then
+        log "'claude --continue' failed after ${ELAPSED}s (>= ${FAST_FAIL_THRESHOLD}s threshold) -- treating as a real crash, not retrying. Exit code: ${STATUS}."
         exit "${STATUS}"
     fi
 
+    log "'claude --continue' exited immediately after ${ELAPSED}s (nothing resumable) -- retrying once without --continue."
     echo "claude-remote-launch: --continue exited immediately (no resumable session found) — retrying without --continue" >&2
+else
+    log "No resumable conversation found in ${HISTORY_DIR} -- starting a fresh session directly."
 fi
 
+log "Launching 'claude $*' -- this is the process that shows the Remote Control pairing link/code, if this is a new session."
 exec claude "$@"

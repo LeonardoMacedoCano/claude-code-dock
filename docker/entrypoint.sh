@@ -181,6 +181,8 @@ fatal() {
 # owned by root because CONFIG_BASE_PATH/WORKSPACE_PATH was unset,
 # misspelled, or never chown'd to match PUID/PGID).
 validate_config() {
+    local t0
+    t0=$(date +%s)
     log_step "Validating configuration..."
 
     local mode="${AUTO_START_MODE:-interactive}"
@@ -217,8 +219,14 @@ validate_config() {
             "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R ${target_uid}:${target_gid} ${workspace_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}"
     fi
 
-    log_info "Configuration OK: mode=${mode}, config dir writable, workspace writable."
+    log_info "Configuration OK: mode=${mode}, config dir writable, workspace writable. (validated in $(( $(date +%s) - t0 ))s)"
 }
+
+# Wall-clock reference for the "Total startup time" line near the final
+# exec -- lets the log show how long everything from here to the tmux/claude
+# handoff actually took, instead of only per-line timestamps a reader would
+# have to subtract by hand.
+STARTUP_T0=$(date +%s)
 
 log_write "STEP" "──── container start ────"
 
@@ -256,6 +264,7 @@ fi
 echo ""
 
 log_step "Checking Claude Code installation..."
+CLAUDE_CHECK_T0=$(date +%s)
 
 if ! command -v claude &>/dev/null; then
     fatal "Claude Code binary missing" \
@@ -264,7 +273,7 @@ if ! command -v claude &>/dev/null; then
 fi
 
 CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "unknown version")
-log_info "Claude Code: ${BOLD}${CLAUDE_VERSION}${RESET}"
+log_info "Claude Code: ${BOLD}${CLAUDE_VERSION}${RESET} (checked in $(( $(date +%s) - CLAUDE_CHECK_T0 ))s)"
 
 validate_config
 
@@ -290,9 +299,13 @@ if [ ! -L "${CLAUDE_JSON_LINK}" ]; then
     ln -sf "${CLAUDE_JSON_REAL}" "${CLAUDE_JSON_LINK}"
 fi
 
+# Read below (near the final exec) to decide whether the "ACTION REQUIRED"
+# block needs to tell the user a first login is still pending.
 if [ -f "${CLAUDE_JSON_REAL}" ]; then
+    HAS_CREDENTIALS=true
     log_info "Persistent login: ${BOLD}credentials loaded${RESET}"
 else
+    HAS_CREDENTIALS=false
     log_info "Persistent login: ${BOLD}waiting for first login${RESET}"
 fi
 
@@ -364,6 +377,7 @@ fi
 SHARED_DIR="${HOME}/.claude-shared"
 
 if [ -f "${SHARED_DIR}/CLAUDE.md" ]; then
+    SHARED_MERGE_T0=$(date +%s)
     log_step "Applying shared configuration..."
 
     LOCAL_MD="${HOME}/.claude/CLAUDE-local.md"
@@ -385,7 +399,7 @@ if [ -f "${SHARED_DIR}/CLAUDE.md" ]; then
         fi
     } > "${GENERATED_MD}"
 
-    log_info "Shared CLAUDE.md applied"
+    log_info "Shared CLAUDE.md applied (in $(( $(date +%s) - SHARED_MERGE_T0 ))s)"
 fi
 
 if [ -d "${SHARED_DIR}/commands" ]; then
@@ -480,29 +494,58 @@ echo ""
 echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
+RESOLVED_CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
+ATTACH_CMD="docker exec -it --user node ${RESOLVED_CONTAINER_NAME} tmux attach-session -t main"
+SHELL_CMD="docker exec -it --user node ${RESOLVED_CONTAINER_NAME} bash"
+
+# One line, always logged (unlike the case-specific echo block below), that
+# ties mode + container name + session together -- so a reader of dock.log
+# alone (no docker inspect needed) can answer "what is this container, and
+# how do I reach it" without cross-referencing .env.
+log_step "Startup summary"
+log_info "Mode: ${BOLD}${MODE}${RESET} | Container: ${BOLD}${RESOLVED_CONTAINER_NAME}${RESET} | Session: ${BOLD}${REMOTE_SESSION_NAME:-<none>}${RESET}"
+log_info "Total startup time: $(( $(date +%s) - STARTUP_T0 ))s"
+
 case "${MODE}" in
     remote)
         echo -e "  ${BOLD}Execution mode:${RESET} ${GREEN}remote control${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it --user node ${CONTAINER_NAME:-claude-code-dock} tmux attach-session -t main${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}${ATTACH_CMD}${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}Ctrl+B${RESET} then ${CYAN}D${RESET}"
         echo -e "  ${BOLD}Resume:${RESET}         auto-continues the last conversation in /workspace if one exists;"
         echo -e "                     starts fresh automatically if there's nothing resumable"
         ;;
     shell)
         echo -e "  ${BOLD}Execution mode:${RESET} ${YELLOW}shell (bash)${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it --user node ${CONTAINER_NAME:-claude-code-dock} bash${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}${SHELL_CMD}${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}exit${RESET} or ${CYAN}Ctrl+D${RESET}"
         ;;
     *)
         echo -e "  ${BOLD}Execution mode:${RESET} ${GREEN}interactive${RESET}"
-        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}docker exec -it --user node ${CONTAINER_NAME:-claude-code-dock} tmux attach-session -t main${RESET}"
+        echo -e "  ${BOLD}Connect:${RESET}        ${CYAN}${ATTACH_CMD}${RESET}"
         echo -e "  ${BOLD}Disconnect:${RESET}     ${CYAN}Ctrl+B${RESET} then ${CYAN}D${RESET}"
-        echo -e "  ${BOLD}Debug shell:${RESET}    ${CYAN}./scripts/shell.sh${RESET}"
-        echo ""
-        echo -e "  ${BOLD}First use:${RESET} Claude Code will prompt for authentication."
-        echo -e "  Credentials saved in ${CYAN}CONFIG_BASE_PATH/REMOTE_SESSION_NAME${RESET} and persist across restarts."
+        echo -e "  ${BOLD}Debug shell:${RESET}    ${CYAN}${SHELL_CMD}${RESET}"
         ;;
 esac
+
+echo ""
+
+# From here, tmux is about to take over the tty -- `docker logs`/Unraid's
+# Logs tab stop showing scrolling text and start mirroring whatever is
+# currently on the pane's screen instead (see LOG_FILE's own header comment
+# above). This is the one place that has to say, in a way that survives into
+# dock.log too, exactly what step this is and what to do next -- otherwise a
+# reader watching docker logs after this point sees nothing new and has no
+# way to tell "still starting" from "waiting on me to do something."
+if [ "${MODE}" != "shell" ]; then
+    if [ "${HAS_CREDENTIALS}" = "false" ]; then
+        log_warn "ACTION REQUIRED: no Claude Code login found yet for session '${REMOTE_SESSION_NAME:-default}'. tmux is taking over the terminal now -- docker logs/Unraid's Logs tab will stop showing new text from this point on."
+        log_warn "Next step: attach and complete the authentication prompt now: ${ATTACH_CMD}"
+    elif [ "${MODE}" = "remote" ]; then
+        log_info "Existing credentials found for '${REMOTE_SESSION_NAME:-default}' -- Remote Control will try to resume this session automatically (--continue)."
+        log_info "If it does not appear on claude.ai/code within a minute, or needs re-pairing, attach and check the pane: ${ATTACH_CMD}"
+    fi
+    log_info "Live text log, unaffected by tmux taking the tty: ${LOG_FILE}"
+fi
 
 echo ""
 log_info "Executing: ${BOLD}${DISPLAY_CMD}${RESET}"
