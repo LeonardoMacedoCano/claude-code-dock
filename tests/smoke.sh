@@ -58,7 +58,17 @@ cleanup() {
     # checkout's backups/ directory. Scoped to this run's RUN_ID so it can
     # never touch an operator's real backups if this is ever run outside CI.
     rm -f "${PROJECT_DIR}"/backups/claude-code-dock-smoke-dr-"${RUN_ID}"-*.tar.gz* &>/dev/null || true
-    [ -n "${WORK_DIR}" ] && rm -rf "${WORK_DIR}"
+    # Containers write into these mounted dirs as uid 1000 ('node'), which
+    # doesn't match whoever ran this script (e.g. GitHub's ubuntu-24.04
+    # runner user is uid 1001) -- a plain `rm -rf` can fail on files it
+    # doesn't own (dock.log, backup snapshots, ...), which is harmless in CI
+    # (the whole runner VM is discarded after the job) but would otherwise
+    # leave undeletable directories behind on a real dev machine across
+    # repeated local runs. `sudo` is passwordless on GitHub-hosted runners;
+    # this stays a no-op failure (swallowed by `|| true`) wherever it isn't.
+    if [ -n "${WORK_DIR}" ] && ! rm -rf "${WORK_DIR}" 2>/dev/null; then
+        sudo rm -rf "${WORK_DIR}" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 
@@ -254,6 +264,16 @@ test_disaster_recovery() {
         return 1
     fi
     ok "backup -> wipe -> restore round trip via the real scripts succeeded."
+
+    # tar (inside restore.sh) recreates this directory from scratch during
+    # extraction, owned by whoever ran it -- the same "chmod instead of
+    # chown" reasoning as test_mode() above applies again here, and for the
+    # same real-world reason: GitHub's ubuntu-24.04 runner user is uid 1001,
+    # not 1000, so without this the restored directory is unwritable by the
+    # container's node user and entrypoint.sh's own fatal() (correctly)
+    # refuses to start, which is exactly what broke here before this line
+    # was added.
+    chmod -R 0777 "${config_base}/${session}"
 
     if ! docker run -d -i -t --name "${name}" \
             -e AUTO_START_MODE=interactive \
