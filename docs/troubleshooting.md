@@ -517,6 +517,35 @@ docker compose build --no-cache
 curl -s https://registry.npmjs.org/@anthropic-ai/claude-code | jq '.["dist-tags"].latest'
 ```
 
+### Build "succeeds" but serves a stale Claude Code / apt version
+
+**Symptom:** the build log shows `CACHED` on the `apt-get upgrade` and/or
+`npm install -g @anthropic-ai/claude-code@...` steps, even though you expected
+a fresh build (e.g. after editing local source with `CLAUDE_SOURCE_PATH` set,
+or just wanting the latest `claude` release).
+
+**Cause:** `./scripts/install.sh`, `./scripts/update.sh`, and
+`./scripts/session-up.sh` always build local (`CLAUDE_SOURCE_PATH`) images
+with `--no-cache` specifically so these two layers can never be stale. **This
+protection is bypassed whenever something calls `docker compose`/`docker
+compose up --build` directly instead of going through those scripts** — most
+commonly the **Unraid Compose Manager plugin**'s "Update Stack"/"Compose Up"
+button, same class of issue as the container-name conflict above. A plain
+rebuild through Compose Manager reuses Docker's local layer cache, so those
+two `RUN` layers (and the `BUILD SOURCE: ...` line just after them) simply
+don't execute again — no new apt patches, no new `claude` version, and no
+build-source line in the log, even though the build reports success.
+
+**Solution:** force a cache-free rebuild before/instead of using Compose
+Manager's button, replacing `<container-name>` with this stack's actual
+`CONTAINER_NAME` (check `.env` if unsure):
+```bash
+docker compose build --no-cache
+docker compose up -d --force-recreate <container-name>
+```
+This always re-runs the apt/npm/build-source layers regardless of what
+triggered the previous build.
+
 ---
 
 ### `up` fails after a successful build/pull — "Conflict. The container name ... is already in use"

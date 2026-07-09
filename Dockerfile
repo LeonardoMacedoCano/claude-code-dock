@@ -64,11 +64,18 @@ RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
 # to test claude-code-dock changes before pushing) or a GitHub ref, so
 # entrypoint.sh and `scripts/status.sh` can show unambiguously which one is
 # actually running instead of leaving it to guesswork after the build scrolls by.
+# Also echoed directly to the build log (not just written to the file) so it's
+# visible immediately during `docker compose build`/`up --build` -- note this
+# only prints when this layer actually runs; if Docker serves it from cache
+# (e.g. a plain rebuild with no --no-cache), nothing prints here at all, same
+# as the two RUN layers above it.
 ARG CLAUDE_DOCK_SOURCE_PATH=
 ARG CLAUDE_DOCK_VERSION=main
 RUN if [ -n "${CLAUDE_DOCK_SOURCE_PATH}" ]; then \
+        echo "BUILD SOURCE: local clone (${CLAUDE_DOCK_SOURCE_PATH})"; \
         echo "local:${CLAUDE_DOCK_SOURCE_PATH}" > /etc/claude-dock-build-source; \
     else \
+        echo "BUILD SOURCE: GitHub (ref: ${CLAUDE_DOCK_VERSION})"; \
         echo "github:${CLAUDE_DOCK_VERSION}" > /etc/claude-dock-build-source; \
     fi
 
