@@ -9,7 +9,7 @@ labels: bug
 
 ## Setup
 
-- Which of the [four setup profiles](../../README.md#which-setup-is-yours) are you on? (default / remote / with GitHub / CLAUDE_SOURCE_PATH contributor build)
+- Which of the [four setup profiles](../../docs/getting-started.md#which-setup-is-yours) are you on? (default / remote / with GitHub / CLAUDE_SOURCE_PATH contributor build)
 - `AUTO_START_MODE`: <!-- interactive / remote / shell -->
 - Platform: <!-- Linux / Unraid / Synology / QNAP / TrueNAS / Proxmox / other -->
 - Image source: <!-- pulled ghcr.io tag, or CLAUDE_SOURCE_PATH local build -->

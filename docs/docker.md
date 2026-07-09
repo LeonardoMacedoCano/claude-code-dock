@@ -386,7 +386,7 @@ The recommended way to run multiple instances is `./scripts/new-session.sh`
 and a matching `-p claude-<name>` Compose project name, so you can't
 accidentally start session B under session A's `.env` by forgetting the flag),
 and `./scripts/sessions.sh` to list them all — see
-[README: Scripts](../README.md#scripts). The manual approach below (one
+[Getting Started: Scripts](getting-started.md#scripts). The manual approach below (one
 hand-written compose file with several services) still works if you'd rather
 not use the helper scripts:
 

@@ -20,8 +20,8 @@ for the full reasoning.
 1. Fork and clone the repo.
 2. Copy `.env.example` to `.env` and fill in `WORKSPACE_PATH`,
    `CONFIG_BASE_PATH`, `REMOTE_SESSION_NAME` (see the
-   [Which Setup Is Yours?](README.md#which-setup-is-yours) profiles in the
-   README if you're unsure what else to set).
+   [Which Setup Is Yours?](docs/getting-started.md#which-setup-is-yours)
+   profiles if you're unsure what else to set).
 3. Point the build at your local working tree instead of pulling the
    published image or GitHub:
    ```env
@@ -83,6 +83,6 @@ healthcheck, watchdog, session scripts).
 ## Reporting bugs / requesting features
 
 Use the issue templates — they ask for the information needed to reproduce
-(execution mode, which of the [four setup profiles](README.md#which-setup-is-yours)
+(execution mode, which of the [four setup profiles](docs/getting-started.md#which-setup-is-yours)
 you're on, relevant logs). Check [docs/troubleshooting.md](docs/troubleshooting.md)
 first; it covers most common problems already.
