@@ -89,6 +89,7 @@ That covers the default setup. Want GitHub push/pull from inside the container, 
 | [Security](docs/security.md) | Credential protection, remote access |
 | [Architecture](docs/architecture.md) | tmux/PID 1 design, data flow, technical decisions |
 | [CONTRIBUTING](CONTRIBUTING.md) | Dev setup, test suite, PR checklist |
+| [CHANGELOG](CHANGELOG.md) | What changed recently — check before `./scripts/update.sh` |
 
 Deep architecture/decision reference for contributors and AI agents: [CLAUDE.md](CLAUDE.md).
 

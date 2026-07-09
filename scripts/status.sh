@@ -242,7 +242,12 @@ fi
 [ "${JSON_MODE}" != "true" ] && echo -e "  ${CYAN}Backups${RESET}"
 BACKUP_DIR="${PROJECT_DIR}/backups"
 if [ -d "${BACKUP_DIR}" ]; then
-    BACKUP_COUNT=$(ls -1 "${BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | wc -l)
+    # `ls` on a non-matching glob exits non-zero even with 2>/dev/null; under
+    # this script's `set -o pipefail`, that would otherwise abort the whole
+    # script right here (a bare `VAR=$(...)` assignment failing under `set
+    # -e`) whenever backups/ exists but is still empty -- a normal state
+    # before the first backup is ever taken, not an error.
+    BACKUP_COUNT=$( { ls -1 "${BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null || true; } | wc -l)
     LATEST_BACKUP=$(ls -1t "${BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | head -1 || echo "")
     if [ "${JSON_MODE}" != "true" ]; then
         row "Total backups:" "${BACKUP_COUNT}"

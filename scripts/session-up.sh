@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 COMPOSE_FILE="${PROJECT_DIR}/docker-compose.yml"
 OVERRIDE_FILE="${PROJECT_DIR}/docker-compose.override.yml"
+RESOURCES_FILE="${PROJECT_DIR}/docker-compose.resources.yml"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -71,6 +72,43 @@ YAML
     fi
 }
 
+# Mirrors install.sh's check_auto_approve_safety() -- that one only ever runs
+# for the session started via check_env() in install.sh's own .env, so every
+# additional session created via new-session.sh + session-up.sh (this
+# script) was silently skipping the confirmation entirely, no matter how
+# many times CLAUDE_AUTO_APPROVE=true showed up in a .env.<session> file.
+# entrypoint.sh's own startup warning still fires regardless (belt and
+# braces), but that's after the container is already running -- this is the
+# same pre-flight, deliberately blocking confirmation install.sh gives the
+# very first session.
+check_auto_approve_safety() {
+    local auto_approve
+    auto_approve=$(grep "^CLAUDE_AUTO_APPROVE=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+    if [ "${auto_approve}" != "true" ]; then
+        return
+    fi
+
+    if grep -qE '^\s*deploy:\s*$' "${COMPOSE_FILE}" "${OVERRIDE_FILE}" "${RESOURCES_FILE}" 2>/dev/null; then
+        ok "CLAUDE_AUTO_APPROVE=true with resource limits active (docker-compose.resources.yml present)."
+        return
+    fi
+
+    warn "CLAUDE_AUTO_APPROVE=true (in .env.${SESSION_NAME}) with no CPU/memory limits configured."
+    echo ""
+    echo -e "  With --dangerously-skip-permissions, Claude Code runs commands with no"
+    echo -e "  per-command human checkpoint. Nothing currently caps how much CPU or"
+    echo -e "  memory a single Claude-issued command can consume on this host."
+    echo ""
+    echo -e "  Recommended: size docker-compose.resources.yml to your hardware, then run:"
+    echo -e "  ${BOLD}${COMPOSE_CMD} --env-file ${ENV_FILE} -p claude-${SESSION_NAME} -f ${COMPOSE_FILE} -f ${RESOURCES_FILE} up -d${RESET}"
+    echo -e "  See docs/security.md#credential-protection (point 6) for the full risk."
+    echo ""
+    read -r -p "  Continue anyway, without resource limits? [y/N]: " CONTINUE_UNSAFE
+    if [[ "${CONTINUE_UNSAFE,,}" != "y" ]]; then
+        fail "Aborted — size docker-compose.resources.yml (or unset CLAUDE_AUTO_APPROVE in .env.${SESSION_NAME}), then re-run."
+    fi
+}
+
 header
 
 SESSION_NAME="${1:-}"
@@ -103,6 +141,8 @@ sync_override_file
 
 CONTAINER_NAME=$(grep "^CONTAINER_NAME=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock-${SESSION_NAME}}"
+
+check_auto_approve_safety
 
 step "Starting session '${SESSION_NAME}'..."
 

@@ -110,6 +110,18 @@ check_current_status() {
         warn "Container ${CONTAINER_NAME} is not running."
         CONTAINER_RUNNING=false
     fi
+
+    # Captured now, before anything is stopped/rebuilt/recreated below, so a
+    # container that fails its healthcheck on the new image can be rolled
+    # back to exactly what it was running before this update -- 'docker
+    # image prune' (cleanup_old_images, at the very end of main()) only
+    # removes dangling images, so as long as rollback happens before that
+    # step, the old image is still on disk to retag back. Both stay empty
+    # when the container doesn't exist yet (e.g. update.sh run before any
+    # install) -- rollback is then correctly skipped as "nothing to roll
+    # back to" instead of failing on an empty image reference.
+    OLD_IMAGE_ID=$(docker inspect --format '{{.Image}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
+    OLD_IMAGE_REF=$(docker inspect --format '{{.Config.Image}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
 }
 
 run_backup() {
@@ -177,6 +189,74 @@ wait_for_container() {
     return 1
 }
 
+# Waits for Docker's own HEALTHCHECK (Dockerfile) to report "healthy" --
+# distinct from wait_for_container above, which only confirms the process
+# didn't immediately exit. A container can be "Running" for the full 30s
+# --start-period and still never actually reach a usable state (e.g. a
+# HEALTHCHECK CMD that can't parse, or a wedged tmux pane) -- this is what
+# actually confirms the update produced a working container, not just one
+# that's still up.
+#
+# Treats "no healthcheck configured" as an immediate pass rather than
+# blocking forever waiting for a status that will never appear -- this
+# project's own image always defines one (Dockerfile HEALTHCHECK), but this
+# stays correct if that's ever missing (e.g. a custom CLAUDE_SOURCE_PATH
+# build based on a modified Dockerfile).
+wait_for_healthy() {
+    local deadline=$((SECONDS + 60))
+    local status=""
+    while [ $SECONDS -lt $deadline ]; do
+        status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")"
+        case "${status}" in
+            healthy|none|"") return 0 ;;
+            unhealthy) return 1 ;;
+        esac
+        sleep 2
+    done
+    return 1
+}
+
+# Retags the previous image back onto the ref docker-compose.yml resolves to
+# (e.g. ghcr.io/.../claude-code-dock:latest) and recreates -- a purely local
+# Docker operation, no registry access needed, since OLD_IMAGE_ID is still on
+# disk at this point (cleanup_old_images/prune only runs later, in main(),
+# specifically so this is still possible here).
+attempt_rollback() {
+    if [ -z "${OLD_IMAGE_ID}" ] || [ -z "${OLD_IMAGE_REF}" ]; then
+        warn "No previous image was recorded (this looks like the first-ever start) -- nothing to roll back to."
+        return 1
+    fi
+
+    local new_image_id
+    new_image_id=$(docker inspect --format '{{.Image}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
+    if [ "${new_image_id}" = "${OLD_IMAGE_ID}" ]; then
+        warn "The unhealthy container is running the same image as before this update -- rolling back would change nothing."
+        return 1
+    fi
+
+    step "Rolling back to the previous image (${OLD_IMAGE_REF}, ${OLD_IMAGE_ID:0:12})..."
+
+    if ! docker tag "${OLD_IMAGE_ID}" "${OLD_IMAGE_REF}" 2>/dev/null; then
+        warn "Could not re-tag the previous image (${OLD_IMAGE_ID:0:12}) -- it may already have been removed."
+        return 1
+    fi
+    ok "Re-tagged ${OLD_IMAGE_REF} back onto the previous image."
+
+    cd "${PROJECT_DIR}"
+    if ! ${COMPOSE_CMD} "${COMPOSE_FILE_ARGS[@]}" up -d --force-recreate &>/dev/null; then
+        warn "Rollback recreate failed to even start."
+        return 1
+    fi
+
+    if wait_for_container && wait_for_healthy; then
+        ok "Rolled back successfully — container is healthy again on the previous image."
+        return 0
+    fi
+
+    warn "Rollback attempt did not reach a healthy state either."
+    return 1
+}
+
 start_container() {
     step "Starting updated container..."
 
@@ -211,11 +291,23 @@ start_container() {
         fail "docker compose up failed. See output above."
     fi
 
-    if wait_for_container; then
-        ok "Container ${BOLD}${CONTAINER_NAME}${RESET} updated and running."
-    else
-        fail "Container did not start after update. Check logs: ./scripts/logs.sh"
+    if ! wait_for_container; then
+        warn "Container did not reach 'Running' after update."
+        if attempt_rollback; then
+            fail "Update aborted and rolled back to the previous, working image. Investigate the new image before trying ./scripts/update.sh again."
+        fi
+        fail "Container did not start after update, and rollback was not possible. Check logs: ./scripts/logs.sh"
     fi
+
+    if ! wait_for_healthy; then
+        warn "Container is running but did not become healthy within the expected time."
+        if attempt_rollback; then
+            fail "Update aborted and rolled back to the previous, working image. Investigate the new image (docker logs ${CONTAINER_NAME}) before trying ./scripts/update.sh again."
+        fi
+        fail "Container is unhealthy after update, and rollback was not possible. Check logs: ./scripts/logs.sh"
+    fi
+
+    ok "Container ${BOLD}${CONTAINER_NAME}${RESET} updated and healthy."
 }
 
 check_version() {

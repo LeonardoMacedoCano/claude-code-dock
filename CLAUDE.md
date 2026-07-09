@@ -466,12 +466,13 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 **Responsibility:** Update the Docker image safely.
 
 **Required sequence:**
-1. Check current status
+1. Check current status, and record the container's current image ID + resolved image ref (`OLD_IMAGE_ID`/`OLD_IMAGE_REF`, via `docker inspect`) before touching anything — the only chance to capture this is before the pull/rebuild below replaces it
 2. Create backup (unless `--skip-backup`)
 3. Stop the container
 4. `docker compose pull` (fetches the latest published image), falling back to `docker compose build --no-cache` if `CLAUDE_SOURCE_PATH` is set or the pull fails
 5. `docker compose up -d`
-6. Verify the container is running
+6. Wait for `Running`, then wait for Docker's own `HEALTHCHECK` to report `healthy` (`wait_for_healthy()`) — not just that the process didn't immediately exit
+7. If it never reaches `Running`, or goes `unhealthy`/times out waiting to: `attempt_rollback()` re-`docker tag`s `OLD_IMAGE_ID` back onto `OLD_IMAGE_REF` (still on disk — `cleanup_old_images`'s `docker image prune` runs later, specifically after this, so the previous image is never garbage-collected before a rollback might need it) and recreates with `--force-recreate`. Exits non-zero either way (rollback succeeded or not) — a rolled-back-to-working-state result is still a failed *update*, and must not be reported as success
 
 **Why pull, not build, by default:** the published image is rebuilt in CI (weekly, and on every push to `main`) with a cache-busting build arg on the `npm install -g @anthropic-ai/claude-code` layer specifically, so it never serves a stale version from the GitHub Actions layer cache — see `.github/workflows/docker-publish.yml`. Pulling that image is faster than rebuilding locally and gets the same freshness guarantee. `--no-cache` remains necessary for the local-build fallback path, for the same cache-staleness reason.
 
@@ -595,6 +596,26 @@ Set `AUTO_START_MODE=remote` in `.env`.
 **Two ways to actually schedule it** (this script alone doesn't self-schedule):
 1. `./scripts/install.sh --with-watchdog` — a host crontab entry, every 5 minutes. Recommended: no extra container, no elevated Docker access beyond what running `docker` commands already implies.
 2. `docker-compose.watchdog.yml` — an opt-in sidecar container (`docker/Dockerfile.watchdog` + `docker/watchdog-entrypoint.sh`) that loops this same script instead of using cron. Requires mounting `/var/run/docker.sock` (root-equivalent host access) into the sidecar — see that file's header comment and [docs/security.md#known-exception--the-optional-watchdog-sidecar](docs/security.md#known-exception--the-optional-watchdog-sidecar) before using it. Only reach for this when a host genuinely has no cron access.
+
+---
+
+### `scripts/doctor.sh`
+
+**Responsibility:** Read-only preflight checks, run on demand (not scheduled) — surfaces misconfiguration *before* it turns into an `entrypoint.sh` `fatal()` or a support conversation.
+
+**Why this exists:** every check `entrypoint.sh` runs happens inside the container, after `docker compose up` already committed to starting it — a misconfigured host directory, a stale `docker-compose.override.yml`, or `.env` drift from a running container all surface as an opaque failure several steps removed from the actual cause. This script runs the same checks (and a few host-only ones `entrypoint.sh` structurally can't do, like comparing a running container's baked-in env against the currently-loaded `.env`) from outside, before anything is started or recreated. Changes nothing on disk or in Docker — safe to run at any time, including "why is this weird" troubleshooting.
+
+**Checks:**
+1. `docker` present in `PATH` (hard requirement for the rest of this script; `fail()`s immediately if missing, unlike every other check below which only `warn()`s)
+2. Required vars set: `REMOTE_SESSION_NAME`, `WORKSPACE_PATH`, `CONFIG_BASE_PATH`
+3. `docker-compose.yml` in this checkout actually has the `claude-code-dock-init` service — catches an out-of-date clone that predates it
+4. `CLAUDE_SOURCE_PATH` equal to `WORKSPACE_PATH` or `CONFIG_BASE_PATH` — almost always an accidental copy-paste of the wrong variable rather than the (rare, valid) case of using claude-code-dock to develop claude-code-dock itself
+5. `CLAUDE_SOURCE_PATH` set but `docker-compose.override.yml` missing (local build silently not actually happening yet), or the reverse — override present forcing a local build with `CLAUDE_SOURCE_PATH` now unset (stale, left over from a build source that was since switched back to the published image)
+6. Host ownership of `WORKSPACE_PATH` and `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (if they already exist) against `PUID`/`PGID` — the same thing `claude-code-dock-init` fixes automatically, checked here so a filesystem where that chown silently failed (NFS root-squash) doesn't stay invisible
+7. If a container named `CONTAINER_NAME` is running, its baked-in `AUTO_START_MODE`/`CLAUDE_AUTO_APPROVE`/`REMOTE_SESSION_NAME` env vars are compared against the currently-loaded environment — Compose never live-reloads `environment:` values into an already-running container, so an edited `.env` can silently have zero effect until a `--force-recreate`
+8. Whether persistent login credentials (`.claude.json`) already exist for this session — informational, not a problem either way
+
+**Must not:** write, chown, or otherwise mutate anything — this is a read-only diagnostic, not a fixer. `claude-code-dock-init` (see `docker-compose.yml`) is what actually fixes permissions; this script only reports whether that fix already applied.
 
 ---
 
@@ -738,7 +759,7 @@ host-level privilege needed" is `docker-compose.watchdog.yml` (mounts
 - [x] Dockerfile with Claude Code (node user, non-root)
 - [x] docker-compose.yml with persistent volumes
 - [x] Three execution modes (interactive/remote/shell)
-- [x] Management scripts (install, update, backup, restore, attach, shell, logs, claude, remote, status, watchdog, new-session, session-up, sessions)
+- [x] Management scripts (install, update, backup, restore, attach, shell, logs, claude, remote, status, watchdog, new-session, session-up, sessions, doctor)
 - [x] AUTO_START_MODE, CLAUDE_AUTO_APPROVE, CLAUDE_EXTRA_ARGS, GITHUB_TOKEN_FILE variables
 - [x] Complete documentation (Docker, Unraid, Troubleshooting, Security, Architecture)
 - [x] Dockerfile `HEALTHCHECK` + `scripts/watchdog.sh` for external monitoring/auto-restart on `unhealthy`
@@ -760,6 +781,11 @@ host-level privilege needed" is `docker-compose.watchdog.yml` (mounts
 - [x] `scripts/status.sh --json`: machine-readable output for homelab dashboard integration (Homepage, Uptime Kuma, Grafana, ...)
 - [x] `claude-code-dock-init` one-shot container in `docker-compose.yml`: pre-creates and chowns `WORKSPACE_PATH`/`CONFIG_BASE_PATH/REMOTE_SESSION_NAME` to `PUID`/`PGID` before the main service starts, so a brand-new `REMOTE_SESSION_NAME`'s config directory is never left `root`-owned by Docker's own bind-mount auto-create behavior — fixes this regardless of whether the container is brought up via `install.sh`/`session-up.sh` or a bare `docker compose up -d` (e.g. Unraid's Compose Manager plugin)
 - [x] Startup timing + an explicit "ACTION REQUIRED" log block in `entrypoint.sh`/`docker/claude-remote-launch.sh`, persisted to `dock.log`: says which step startup is on, how long each step took, and — when a manual login or remote-control pairing is still pending — the exact `docker exec` command to run, since `docker logs` stops showing readable text the moment `tmux` takes over the tty
+- [x] `scripts/doctor.sh`: read-only preflight command catching the class of misconfiguration that otherwise takes several rounds of troubleshooting to notice (path variables collapsed onto each other, permission drift, a stale `docker-compose.override.yml`, a running container acting on an already-edited `.env`)
+- [x] `scripts/sessions.sh` no longer lists `claude-code-dock-init` containers as sessions; `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE` safety confirmation `install.sh` already had
+- [x] CI validates `docker-compose.yml` (`docker compose config`, all overlays) and `tests/smoke.sh` now also boots via a real `docker compose up` (verifying the `claude-code-dock-init` `depends_on` chain) and runs an end-to-end disaster-recovery drill through the real `backup.sh`/`restore.sh`
+- [x] `scripts/update.sh` waits for `healthy` (not just `Running`) after updating and automatically rolls back to the previous image if it isn't, instead of leaving a broken container up
+- [x] `CHANGELOG.md`: dated, user-facing log of what changed, linked from the README
 
 ### Possible Future Improvements
 
