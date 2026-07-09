@@ -9,6 +9,7 @@ OVERRIDE_FILE="${PROJECT_DIR}/docker-compose.override.yml"
 ENV_FILE="${PROJECT_DIR}/.env"
 ENV_EXAMPLE="${PROJECT_DIR}/.env.example"
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
+WITH_WATCHDOG=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -41,6 +42,25 @@ fail() {
     echo -e "${RED}[✗]${RESET} $1"
     exit 1
 }
+
+for arg in "$@"; do
+    case $arg in
+        --with-watchdog)
+            WITH_WATCHDOG=true
+            ;;
+        -h|--help)
+            echo "Usage: $0 [--with-watchdog]"
+            echo ""
+            echo "  --with-watchdog   After installing, add a crontab entry (every 5 minutes)"
+            echo "                    that runs scripts/watchdog.sh to auto-restart the"
+            echo "                    container if Docker ever reports it 'unhealthy' without"
+            echo "                    actually exiting (restart: unless-stopped alone doesn't"
+            echo "                    catch that case). Idempotent -- safe to pass again on a"
+            echo "                    later re-run; the entry is only added once."
+            exit 0
+            ;;
+    esac
+done
 
 # The container runs as PUID:PGID ('node', remapped from the default 1000:1000
 # by entrypoint.sh's root step-down block if PUID/PGID are set in .env).
@@ -86,6 +106,49 @@ YAML
     elif [ -f "${OVERRIDE_FILE}" ]; then
         rm -f "${OVERRIDE_FILE}"
         ok "docker-compose.override.yml removed — back to pulling the published image."
+    fi
+}
+
+# `restart: unless-stopped` only reacts to the container actually exiting --
+# it never restarts a container Docker still reports as running but
+# `unhealthy` (e.g. a wedged tmux pane). scripts/watchdog.sh closes that gap,
+# but only if something actually runs it periodically; nothing does that on
+# its own. --with-watchdog wires up a host crontab entry so this isn't a step
+# operators have to discover and configure by hand after the fact.
+#
+# Idempotent by design: re-running install.sh --with-watchdog (e.g. after
+# ./scripts/update.sh) must not pile up duplicate cron lines, so any existing
+# line invoking this session's watchdog.sh is left untouched instead of
+# appended again.
+setup_watchdog_cron() {
+    if [ "${WITH_WATCHDOG}" != "true" ]; then
+        return
+    fi
+
+    step "Configuring watchdog cron job..."
+
+    if ! command -v crontab &>/dev/null; then
+        warn "crontab not found on this host — skipping automatic setup."
+        echo -e "    Configure your platform's own scheduler to run this every few minutes instead:"
+        echo -e "    ${BOLD}${SCRIPT_DIR}/watchdog.sh${RESET}"
+        return
+    fi
+
+    local cron_line="*/5 * * * * CONTAINER_NAME=${CONTAINER_NAME} ${SCRIPT_DIR}/watchdog.sh >> ${PROJECT_DIR}/watchdog.log 2>&1"
+    local existing
+    existing="$(crontab -l 2>/dev/null || true)"
+
+    if echo "${existing}" | grep -qF "${SCRIPT_DIR}/watchdog.sh"; then
+        ok "Watchdog cron entry already present for this host — left unchanged."
+        return
+    fi
+
+    if printf '%s\n%s\n' "${existing}" "${cron_line}" | crontab - 2>/dev/null; then
+        ok "Watchdog cron entry added (runs every 5 minutes):"
+        echo -e "    ${BOLD}${cron_line}${RESET}"
+    else
+        warn "Could not write the crontab automatically. Add this line manually:"
+        echo -e "    ${BOLD}${cron_line}${RESET}"
     fi
 }
 
@@ -348,6 +411,12 @@ print_next_steps() {
     echo -e "  ${CYAN}7.${RESET} To list all running sessions:"
     echo -e "     ${BOLD}./scripts/sessions.sh${RESET}"
     echo ""
+    if [ "${WITH_WATCHDOG}" != "true" ]; then
+        echo -e "  ${CYAN}8.${RESET} (optional) Auto-restart if Docker ever reports this container"
+        echo -e "     unhealthy without exiting: re-run ${BOLD}./scripts/install.sh --with-watchdog${RESET}"
+        echo -e "     or see ${BOLD}./scripts/watchdog.sh --help${RESET}."
+        echo ""
+    fi
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo ""
 }
@@ -360,6 +429,7 @@ main() {
     setup_directories
     build_image
     start_services
+    setup_watchdog_cron
     print_next_steps
 }
 
