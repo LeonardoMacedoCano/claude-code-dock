@@ -104,13 +104,13 @@ The project uses four volumes:
 volumes:
   - ${WORKSPACE_PATH}:/workspace                                     # User projects
   - ${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}:/home/node/.claude     # Claude Code credentials (per-session)
-  - ${SHARED_CONFIG_PATH}:/home/node/.claude-shared:ro                # Optional: global CLAUDE.md/commands
+  - ${SHARED_CONFIG_PATH:-/dev/null}:/home/node/.claude-shared:ro     # Optional: global CLAUDE.md/commands (or /dev/null, a no-op)
   - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro      # Optional: GitHub PAT file (or /dev/null, a no-op)
 ```
 
 **Important note:** The config volume mounts to `/home/node/.claude` (not `/root/.claude`), because the actual Claude Code process runs as the `node` user (UID/GID 1000 by default, non-root — set `PUID`/`PGID` in `.env` if your host user differs). It must be writable by that UID on the host — if `CONFIG_BASE_PATH` is unset it silently falls back to `./configs`, and Docker will auto-create that as root-owned, which the entrypoint now rejects at startup (see [Container restart loop](#container-restart-loop) below) instead of crash-looping silently.
 
-**On the `GITHUB_TOKEN_FILE` mount:** unlike the other three, this one is designed to always be present in the `volumes:` list, token configured or not — `${GITHUB_TOKEN_FILE:-/dev/null}` is a standard Compose idiom for an "optional file mount": when `.env`'s `GITHUB_TOKEN_FILE` is unset, Compose mounts `/dev/null` instead (reads as empty, harmless). If you *do* set `GITHUB_TOKEN_FILE` to a host path, make sure the file actually exists there first — Docker auto-creates an empty **directory** at the mount target when the host source is missing, and `entrypoint.sh` detects and warns about that specific case (it can't read a directory as a token).
+**On the `GITHUB_TOKEN_FILE` and `SHARED_CONFIG_PATH` mounts:** unlike the other two, these are designed to always be present in the `volumes:` list, configured or not — `${VAR:-/dev/null}` is a standard Compose idiom for an "optional file mount": when the corresponding `.env` variable is unset, Compose mounts `/dev/null` instead (reads as empty, harmless). This matters more than it sounds for `SHARED_CONFIG_PATH` specifically: an earlier version of this line fell back to a real directory (`./shared-config`) instead, which Docker auto-created (root-owned) on the host even for operators who never touched the `SHARED_CONFIG_PATH` feature at all. `entrypoint.sh` only ever does `[ -f ... ]`/`[ -d ... ]` checks against the mounted path, both of which simply evaluate false when the target is `/dev/null` instead of a directory — same silent no-op as not mounting it. If you *do* set `GITHUB_TOKEN_FILE` to a host path, make sure the file actually exists there first — Docker auto-creates an empty **directory** at the mount target when the host source is missing, and `entrypoint.sh` detects and warns about that specific case (it can't read a directory as a token).
 
 ### Inspect volumes
 
@@ -284,6 +284,82 @@ topic) for a notification whenever the watchdog actually restarts the
 container, fails to restart it, or skips it because `entrypoint.sh`'s
 `fatal()` marker shows this is a persistent misconfiguration rather than a
 wedged process (see `scripts/watchdog.sh --help` for the full behavior).
+
+---
+
+## Backups
+
+`scripts/backup.sh` archives `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (Claude
+Code credentials, always included) and `./workspaces/` (if not empty) into a
+`.tar.gz` under `./backups/`. It never schedules itself — every run is
+either manual or triggered by whatever calls it.
+
+```bash
+# One-off, manual
+./scripts/backup.sh
+
+# Encrypted (GPG, AES256, symmetric)
+./scripts/backup.sh --encrypt
+```
+
+### Automatic daily backups
+
+```bash
+./scripts/install.sh --with-backup-cron
+```
+
+Adds a crontab entry that runs `scripts/backup.sh --quiet` daily at 03:00,
+idempotently (safe to re-run; the entry is only added once) — the same
+mechanism as `--with-watchdog` above, and can be combined with it in the same
+`install.sh` invocation. If `BACKUP_ENCRYPT_PASSPHRASE` is already set in
+`.env` at the time this runs, `--encrypt` is added to the cron line
+automatically so the scheduled run stays non-interactive; without a
+passphrase set, `--encrypt` is deliberately left off — `gpg` would otherwise
+block the cron job indefinitely waiting on an interactive prompt with no
+terminal attached to answer it.
+
+This is worth setting up even if you skip the watchdog: losing the config
+volume with no backup means re-authenticating Claude Code from scratch and
+losing session history, whereas a wedged tmux pane (what the watchdog
+guards against) is just an inconvenience. See
+[Security: Credential Protection](security.md#credential-protection) for the
+full backup encryption story.
+
+---
+
+## Resource Limits
+
+`docker-compose.yml` sets no CPU/memory ceiling by default — a hardcoded
+value would be wrong for most hosts (a Raspberry Pi and a 32-core Unraid box
+have nothing in common). This matters most when `CLAUDE_AUTO_APPROVE=true`:
+with no per-command human checkpoint, nothing else in this project caps how
+much CPU or memory a single Claude-issued command can consume on this host.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d
+```
+
+`docker-compose.resources.yml` is an opt-in overlay (same non-auto-loaded
+layering pattern as `docker-compose.watchdog.yml` — explicit `-f`, never
+merged automatically) that applies a `deploy.resources` block to the main
+service. Edit the `cpus`/`memory` values to match your hardware before using
+it.
+
+This is a separate file rather than a commented-out block in
+`docker-compose.yml` itself for a reason specific to this project:
+`docker-compose.override.yml` already exists and is fully managed by
+`install.sh`/`update.sh`/`session-up.sh` for `CLAUDE_SOURCE_PATH` (see
+[Local development](#local-development) below) — its contents get
+regenerated or the file gets deleted outright based on `CLAUDE_SOURCE_PATH`
+alone, so anything else placed in it would be silently clobbered on the next
+run of those scripts. A separate, explicitly opted-in file avoids that
+collision entirely.
+
+`./scripts/install.sh` checks whether this file exists on disk when
+`CLAUDE_AUTO_APPROVE=true` and asks for explicit confirmation before
+continuing if it doesn't (`check_auto_approve_safety()`) — see
+[Security: Credential Protection, point 6](security.md#credential-protection)
+for the full risk this is guarding against.
 
 ---
 
@@ -524,6 +600,16 @@ docker logs -f claude-code-dock
 
 # Status
 docker ps --filter name=claude-code-dock
+# or, for a full summary (human-readable or --json for dashboards):
+./scripts/status.sh
+./scripts/status.sh --json
+
+# Backup (manual, or --with-backup-cron for a daily schedule)
+./scripts/backup.sh --encrypt
+./scripts/install.sh --with-backup-cron
+
+# Apply CPU/memory limits (edit docker-compose.resources.yml first)
+docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d
 
 # Stop
 docker compose stop

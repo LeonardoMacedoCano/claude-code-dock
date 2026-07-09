@@ -462,13 +462,20 @@ uptime
 free -h
 ```
 
-**Solution — increase limits in docker-compose.yml:**
+**Solution — raise the limits in `docker-compose.resources.yml`, then apply it:**
 ```yaml
-deploy:
-  resources:
-    limits:
-      memory: 4G
+# docker-compose.resources.yml
+services:
+  claude-code-dock:
+    deploy:
+      resources:
+        limits:
+          memory: 4g
 ```
+```bash
+docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d
+```
+See [Docker Reference: Resource Limits](docker.md#resource-limits) for why this lives in a separate, opt-in overlay instead of `docker-compose.yml` itself.
 
 ---
 

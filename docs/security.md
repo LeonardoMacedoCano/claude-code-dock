@@ -70,6 +70,8 @@ gpg --decrypt claude-code-dock-backup-2024-01-01_12-00-00.tar.gz.gpg > backup.ta
 
 Requires `gpg` on the host running the backup script (not inside the container).
 
+To have this run automatically instead of relying on remembering to do it, set `BACKUP_ENCRYPT_PASSPHRASE` in `.env` and run `./scripts/install.sh --with-backup-cron` — it adds a daily host crontab entry and automatically includes `--encrypt` when that passphrase is already set (see [Docker Reference: Backups](docker.md#backups)).
+
 **4. Never share the config directory:**
 
 Anyone with access to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` can use your Claude Code credentials.
@@ -313,13 +315,13 @@ trivy image claude-code-dock_claude-code-dock
 [ ] .env is in .gitignore
 [ ] No Docker ports are exposed
 [ ] Server access is via SSH with public key
-[ ] Backups of the config directory are stored securely (prefer scripts/backup.sh --encrypt)
+[ ] Backups of the config directory are stored securely (prefer scripts/backup.sh --encrypt) and actually happen on a schedule, not only when remembered manually (`./scripts/install.sh --with-backup-cron`)
 [ ] The server is not directly exposed to the internet
 [ ] VPN configured for external access (if needed)
 [ ] Container runs as node user (not root) -- verify with: docker exec claude-code-dock whoami
 [ ] CLAUDE_AUTO_APPROVE is false unless you've deliberately decided to trust this workspace
 [ ] Anyone with `docker` access to this host is treated as trusted (env vars are readable via docker inspect/exec; the mounted GITHUB_TOKEN_FILE content is readable via docker exec)
 [ ] If CLAUDE_AUTO_APPROVE=true, the token behind GITHUB_TOKEN_FILE is scoped as narrowly as possible (fine-grained PAT, single repo) -- with auto-approve on, the agent itself (not just the host) can read ~/.git-credentials
-[ ] If CLAUDE_AUTO_APPROVE=true, resource limits are set (docker-compose.yml's commented deploy: block, uncommented and sized) -- with no per-command confirmation, nothing else caps how much CPU/memory a single command can consume
+[ ] If CLAUDE_AUTO_APPROVE=true, resource limits are set (size docker-compose.resources.yml and run with `-f docker-compose.yml -f docker-compose.resources.yml`) -- with no per-command confirmation, nothing else caps how much CPU/memory a single command can consume
 [ ] docker-compose.watchdog.yml is NOT in use unless this host has no cron access -- it mounts /var/run/docker.sock (root-equivalent host access) into a sidecar container; prefer `./scripts/install.sh --with-watchdog` (host crontab, no socket exposure)
 ```

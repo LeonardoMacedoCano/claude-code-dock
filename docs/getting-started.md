@@ -151,7 +151,7 @@ Available after cloning the repo (each supports `-h`/`--help` for details):
 ./scripts/attach.sh       # Attach to the tmux session where Claude is running
 ./scripts/shell.sh        # Open a separate bash shell in the container
 ./scripts/logs.sh         # Stream container logs (--app for the persistent startup log)
-./scripts/status.sh       # Show status, credentials, workspace, and backups
+./scripts/status.sh       # Show status, credentials, workspace, and backups (--json for dashboards)
 ./scripts/watchdog.sh     # Restart the container if Docker reports it unhealthy (run via cron)
 ./scripts/update.sh       # Pull latest image (or rebuild if CLAUDE_SOURCE_PATH is set), restart
 ./scripts/backup.sh       # Backup credentials and workspace (--encrypt for GPG AES256)
@@ -159,6 +159,12 @@ Available after cloning the repo (each supports `-h`/`--help` for details):
 ./scripts/claude.sh       # Run Claude via docker exec (separate session)
 ./scripts/remote.sh       # Temporary Remote Control session via docker exec
 ```
+
+`install.sh` also accepts `--with-watchdog` and `--with-backup-cron` to set up
+host crontab entries for auto-restart-on-unhealthy and daily backups,
+respectively — both idempotent, safe to pass on a later re-run. See
+[Docker Reference: Watchdog](docker.md#watchdog) and
+[Docker Reference: Backups](docker.md#backups).
 
 ---
 

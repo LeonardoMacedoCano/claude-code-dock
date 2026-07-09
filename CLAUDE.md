@@ -81,6 +81,8 @@ Not just running the project — modifying claude-code-dock itself and needs the
 | Pin the pulled image tag | `CLAUDE_DOCK_TAG` | Silent no-op when unset (falls back to `:latest`); ignored entirely if `CLAUDE_SOURCE_PATH` is set |
 | Backup retention beyond the last 10 | `BACKUP_RETENTION` | Silent no-op when unset (defaults to 10) |
 | Encrypted backups, non-interactive | `BACKUP_ENCRYPT_PASSPHRASE` (with `backup.sh --encrypt`) | Silent no-op when unset — `gpg` just prompts interactively instead |
+| Scheduled daily backups | `install.sh --with-backup-cron` (flag, not an env var) | Opt-in host crontab entry; auto-adds `--encrypt` only if `BACKUP_ENCRYPT_PASSPHRASE` is already set in `.env` |
+| CPU/memory resource limits | `docker-compose.resources.yml` (opt-in overlay, not an env var) | Not applied unless explicitly layered with `-f`; `install.sh` only warns when `CLAUDE_AUTO_APPROVE=true` and it's absent |
 | Watchdog restart notifications | `WATCHDOG_NTFY_URL` (host-side only) | Silent no-op when unset or `curl` missing |
 
 ---
@@ -239,6 +241,10 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
   and optionally `SHARED_CONFIG_PATH:/home/node/.claude-shared:ro` (global
   `CLAUDE.md`/`commands/` merged into every session at startup, with
   instance-specific overrides in `CONFIG_BASE_PATH/<session>/CLAUDE-local.md`).
+  `SHARED_CONFIG_PATH` uses the same optional-file-mount idiom as
+  `GITHUB_TOKEN_FILE` (falls back to `/dev/null` rather than a real host
+  directory when unset) — see [`docker-compose.yml`](#docker-composeyml)
+  below for why that matters.
 
 ---
 
@@ -258,7 +264,7 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
 | `WORKSPACE_PATH` | `./workspaces` | Path to projects on the host |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories |
 | `REMOTE_SESSION_NAME` | `` | **Required.** Unique session ID — isolates config, names backups, prevents duplicate containers |
-| `SHARED_CONFIG_PATH` | `` | Optional shared dir with global `CLAUDE.md` and `commands/` applied to all sessions |
+| `SHARED_CONFIG_PATH` | `` | Optional shared dir with global `CLAUDE.md` and `commands/` applied to all sessions. Unset falls back to `/dev/null` in `docker-compose.yml`'s mount (not a real host directory), so leaving this unset creates nothing on the host |
 | `TZ` | `UTC` | Timezone |
 | `GIT_USER_NAME` | `` | Name for git commits |
 | `GIT_USER_EMAIL` | `` | Email for git commits |
@@ -326,6 +332,7 @@ must always end on that final `exec` — never a plain call, which would leave
 - `HEALTHCHECK`'s tmux checks run via `setpriv --reuid=node --regid=node --init-groups tmux ...`: the healthcheck probe executes as the image's default user, now root, but the tmux session was created by `node` (whichever UID that currently maps to) — a root-invoked `tmux has-session` looks at root's own socket path and never finds it otherwise.
 - `ENTRYPOINT`: ensures the entrypoint always executes.
 - `/etc/claude-dock-build-source`: written at build time from the `CLAUDE_DOCK_SOURCE_PATH`/`CLAUDE_DOCK_VERSION` build args, as `local:<path>` or `github:<ref>`. Lets `entrypoint.sh` and `scripts/status.sh` report unambiguously which source produced the running image (mirrors the existing `/etc/claude-code-version` marker pattern).
+- `/etc/claude-dock-packages.list`: `dpkg -l` snapshotted into the image in the same layer as `apt-get upgrade`/`apt-get install`, third marker alongside the two above. Exists specifically because that `apt-get upgrade` (see the trade-off comment on that `RUN` line) makes the Debian package set non-reproducible across rebuilds of the same source — without this, there would be no way to tell after the fact which package versions a given running container actually has, making a regression introduced by a routine weekly rebuild unbisectable. Compare two images with `docker run --rm <image> cat /etc/claude-dock-packages.list` and `diff`.
 
 **What NOT to do in the Dockerfile:**
 - Do not add packages without clear justification
@@ -347,6 +354,8 @@ must always end on that final `exec` — never a plain call, which would leave
 - `image: ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest}` + `build:`: both present intentionally — `image:` is what `docker compose pull` (the default install/update path) fetches; `build:` is the fallback path used when `CLAUDE_SOURCE_PATH` is set or someone explicitly runs `docker compose build`. The registry/repo in `image:` is a hardcoded literal (not a variable) — only the tag is configurable, via `CLAUDE_DOCK_TAG` (default `latest`; set `stable` or a pinned `vX.Y.Z`). There is deliberately no var to repoint the registry/repo itself — nobody running this project needs to pull from a different fork's registry day-to-day, and `CLAUDE_SOURCE_PATH` already covers the "I'm working on claude-code-dock itself" case. `build.args` also passes `CLAUDE_DOCK_SOURCE_PATH` (raw `CLAUDE_SOURCE_PATH`) and `CLAUDE_DOCK_VERSION` through so the Dockerfile can bake which one was used into `/etc/claude-dock-build-source` — read by `entrypoint.sh`'s startup log and `scripts/status.sh`.
 - Because `image:` + `build:` coexist, Compose only builds when the tag isn't already present locally — a bare `docker compose up -d` will NOT rebuild an already-tagged image, even with `CLAUDE_SOURCE_PATH` set. `install.sh`/`update.sh`/`session-up.sh` handle this by explicitly building with `--no-cache` AND by generating `docker-compose.override.yml` (gitignored, next to `docker-compose.yml`) whenever `CLAUDE_SOURCE_PATH` is set — removed again when it's unset. That override sets `image: claude-code-dock:local` and `pull_policy: build` on the service; Compose auto-loads it for *any* `docker compose` invocation run from the same directory (not just these scripts), so a bare `docker compose up -d` — including one run by a tool that doesn't know this project's conventions, e.g. Unraid's Compose Manager plugin — also rebuilds correctly, as long as it runs from that same directory and one of the three scripts has generated the override at least once. This is deliberately not expressed as `${CLAUDE_SOURCE_PATH:-x}` interpolation directly on `image:`/`pull_policy:` in the base file — Compose's substitution has no leak-free way to turn an arbitrary host path into a fixed tag/policy value (the raw path, which commonly contains `/`, would end up concatenated into a field that doesn't tolerate it). See `docs/docker.md#local-development`.
 - `- ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro` in `volumes:`: the "optional file mount" idiom — mounts the real host token file when `.env`'s `GITHUB_TOKEN_FILE` is set, or a harmless empty `/dev/null` when it's not, so this line is always present and always safe regardless of whether the operator configured a token. Paired with `- GITHUB_TOKEN_FILE=/run/secrets/github_token` in `environment:`, which is a **literal**, not `${GITHUB_TOKEN_FILE:-}` — the container always looks at this fixed convention path; the host-side `.env` value is only ever used for the volume mount source, never passed into the container directly.
+- `- ${SHARED_CONFIG_PATH:-/dev/null}:/home/node/.claude-shared:ro` in `volumes:`: the same optional-file-mount idiom as `GITHUB_TOKEN_FILE` above, not the naive `${SHARED_CONFIG_PATH:-./shared-config}` this line used before — that earlier form fell back to a *real* host directory, which Docker auto-creates (root-owned) even when the operator never configured `SHARED_CONFIG_PATH` at all, leaving an unexplained artifact on the host for a feature nobody opted into. `entrypoint.sh` only ever does `[ -f "$SHARED_DIR"/CLAUDE.md ]` / `[ -d "$SHARED_DIR"/commands ]` against this path, both of which simply evaluate false when the mount target is `/dev/null` instead of a real directory, so this degrades to the same silent no-op as leaving the feature unmounted entirely — same reasoning as [Usage Profiles](#usage-profiles)'s feature matrix above.
+- Resource limits (CPU/memory) are **not** in this file. They live in the opt-in `docker-compose.resources.yml` overlay (same non-auto-loaded layering pattern as `docker-compose.watchdog.yml` — explicit `-f`, never merged automatically) instead of a commented-out block here, for two reasons: (1) `docker-compose.override.yml` is already scripts-managed for `CLAUDE_SOURCE_PATH` (see `sync_override_file()` below) and would silently clobber anything else placed in it; (2) a hardcoded limit in this tracked file would be wrong for most hosts. See that file's own header comment and `scripts/install.sh`'s `check_auto_approve_safety()`, which warns when `CLAUDE_AUTO_APPROVE=true` and `docker-compose.resources.yml` isn't present on disk.
 - `- PUID=${PUID:-1000}` / `- PGID=${PGID:-1000}` in `environment:`: read by `entrypoint.sh`'s root step-down block to remap the `node` account before dropping privilege. No corresponding `user:` field is set on the service — the container must start as root (the image's default, see the `Dockerfile` section) for that remap to be possible at all.
 
 **What NOT to change without good reason:**
@@ -416,17 +425,26 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 - Create `.env` from `.env.example` if it doesn't exist
 - Ask for confirmation before creating directories on the host
 - Display clear instructions after installation
-- If `CLAUDE_AUTO_APPROVE=true` and `docker-compose.yml`'s `deploy:` resource-limit
-  block is not active, require an explicit y/N confirmation before continuing
+- If `CLAUDE_AUTO_APPROVE=true` and `docker-compose.resources.yml` is not present on
+  disk, require an explicit y/N confirmation before continuing
   (`check_auto_approve_safety()`) — with no per-command checkpoint and no CPU/memory
   ceiling, nothing else bounds what a single Claude-issued command can do to this
   host. `docker/entrypoint.sh` logs the same warning on every start so it's still
   visible when the container was brought up some other way (bare `docker compose up`,
-  `scripts/update.sh`, `scripts/session-up.sh`, a third-party tool).
+  `scripts/update.sh`, `scripts/session-up.sh`, a third-party tool). Detection is
+  best-effort (file presence, not "will this exact `docker compose up` load it") —
+  see the `docker-compose.yml` section above.
 - `--with-watchdog`: after a successful install, add a host crontab entry running
   `scripts/watchdog.sh` every 5 minutes (`setup_watchdog_cron()`), idempotently —
   re-running it must never duplicate the cron line. Falls back to printing the line
   to schedule manually when `crontab` isn't available on this host.
+- `--with-backup-cron`: same mechanism as `--with-watchdog` (`setup_backup_cron()`),
+  a daily-at-03:00 host crontab entry running `scripts/backup.sh --quiet`, idempotent
+  the same way. Automatically appends `--encrypt` to the cron line when
+  `BACKUP_ENCRYPT_PASSPHRASE` is already set in `.env` (read via `check_env()`'s
+  earlier `source .env`) — without a passphrase, `gpg` would otherwise block a cron
+  job forever waiting on an interactive prompt with no terminal attached, so
+  `--encrypt` is deliberately NOT added when unset.
 
 **Must not:**
 - Modify system settings
@@ -473,6 +491,8 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 **Encryption (`--encrypt`):** Pipes the finished `.tar.gz` through `gpg --symmetric --cipher-algo AES256`, producing a `.tar.gz.gpg` and removing the plaintext archive. Passphrase source, in order: `BACKUP_ENCRYPT_PASSPHRASE` env var (e.g. set in `.env`, non-interactive — for cron use) or an interactive `gpg` prompt if unset. Requires `gpg` on the host (not the container) since backups are host-side files.
 
 **Unencrypted-credentials warning:** `print_result()` tracks whether the archive included `CONFIG_DIR` (`BACKUP_HAS_CONFIG`, set in `create_backup_archive()`) and, when it did and `--encrypt` wasn't passed, prints an explicit note that the `.tar.gz` contains plaintext Claude Code session credentials — since the default (no flag) path produces exactly that file, silently.
+
+**Scheduling:** this script never schedules itself — it only runs when invoked manually or by whatever calls it. `scripts/install.sh --with-backup-cron` is the supported way to run it automatically (a daily host crontab entry); see that script's section above. Not wiring this up at all is a real gap for a project whose primary asset (Claude Code session credentials) lives nowhere else — treat losing the config volume with no backup as the actual failure mode `--with-backup-cron` exists to prevent, not `scripts/watchdog.sh`'s wedged-pane scenario, which is merely inconvenient by comparison.
 
 ---
 
@@ -725,6 +745,11 @@ host-level privilege needed" is `docker-compose.watchdog.yml` (mounts
 - [x] `docker-compose.watchdog.yml`: opt-in sidecar alternative to the crontab path, with the `docker.sock` privilege trade-off documented up front
 - [x] `CLAUDE_AUTO_APPROVE=true` without resource limits now requires explicit confirmation in `install.sh`, and is logged as a warning by `entrypoint.sh` on every start regardless of how the container was brought up
 - [x] `scripts/backup.sh` warns explicitly when an unencrypted archive contains plaintext credentials
+- [x] `scripts/install.sh --with-backup-cron`: one-flag daily host crontab setup for `scripts/backup.sh`, idempotent, auto-encrypting when `BACKUP_ENCRYPT_PASSPHRASE` is already configured
+- [x] `docker-compose.resources.yml`: opt-in CPU/memory limit overlay, same explicit-`-f` pattern as `docker-compose.watchdog.yml`, replacing the commented-out `deploy:` block that used to live in `docker-compose.yml` itself
+- [x] `SHARED_CONFIG_PATH` mount now falls back to `/dev/null` (like `GITHUB_TOKEN_FILE`) instead of a real host directory when unset — no more unexplained `./shared-config/` created for a feature nobody opted into
+- [x] `/etc/claude-dock-packages.list`: `dpkg -l` snapshot baked into the image, so an unpinned `apt-get upgrade` build is bisectable after the fact
+- [x] `scripts/status.sh --json`: machine-readable output for homelab dashboard integration (Homepage, Uptime Kuma, Grafana, ...)
 
 ### Possible Future Improvements
 
