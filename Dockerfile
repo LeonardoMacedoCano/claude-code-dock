@@ -38,6 +38,15 @@ ARG CACHEBUST=1
 # published image digest (`docker pull ...@sha256:...`) rather than a moving
 # tag -- that image's package set is then fixed, even though future rebuilds
 # of the same source won't match it exactly.
+#
+# Because the package set isn't reproducible across rebuilds, this layer also
+# snapshots `dpkg -l` to /etc/claude-dock-packages.list (same pattern as the
+# /etc/claude-code-version and /etc/claude-dock-build-source markers below) --
+# without it, there would be no way to tell which Debian package versions a
+# given running container actually has after the fact, making a regression
+# introduced by a routine weekly rebuild unbisectable. Compare two images with:
+#   docker run --rm <image> cat /etc/claude-dock-packages.list > a.list
+#   diff a.list b.list
 RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
     apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     bash \
@@ -50,6 +59,7 @@ RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
     procps \
     less \
     jq \
+    && dpkg -l > /etc/claude-dock-packages.list \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
