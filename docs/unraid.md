@@ -451,6 +451,17 @@ cd /mnt/user/appdata/claude-code-dock
 docker compose up -d
 ```
 
+### Compose Manager plugin's "Compose Up"/"Update Stack" fails with a raw "Conflict... name is already in use" error
+
+The Compose Manager plugin calls `docker compose pull`/`up` directly, not
+`./scripts/update.sh` — so the friendlier, re-worded message those scripts
+give for a `CONTAINER_NAME` collision never kicks in here; you get Docker's
+raw daemon error instead. This almost always means two stacks (e.g. a
+"prod" and a "dev/test" copy) have the same `CONTAINER_NAME` in their
+`.env`. See
+[troubleshooting.md](troubleshooting.md#up-fails-after-a-successful-buildpull--conflict-the-container-name--is-already-in-use)
+for the fix — set a unique `CONTAINER_NAME` per stack's `.env`.
+
 ### Docker UI shows the container as "unhealthy"
 
 claude-code-dock's `HEALTHCHECK` isn't an HTTP check (there's no server to

@@ -519,6 +519,46 @@ curl -s https://registry.npmjs.org/@anthropic-ai/claude-code | jq '.["dist-tags"
 
 ---
 
+### `up` fails after a successful build/pull — "Conflict. The container name ... is already in use"
+
+**Symptom:** the image builds or pulls fine, but the final `up` step fails with
+Docker's raw daemon error:
+```
+Error response from daemon: Conflict. The container name "/your-container-name"
+is already in use by container "<id>". You have to remove (or rename) that
+container to be able to reuse that name.
+```
+
+**Cause:** this is a configuration issue, not a build/pull failure — some
+other container (usually a different session/stack, e.g. a `-dev`/`-test`
+duplicate) already holds the exact `CONTAINER_NAME` this stack is trying to
+use. It almost always means `.env` was copied from another session/project
+without changing `CONTAINER_NAME` to something unique.
+
+`./scripts/install.sh`, `./scripts/update.sh`, and `./scripts/session-up.sh`
+already catch this and re-word it with the fix inline. **This raw form shows
+up when something bypasses those scripts and calls `docker compose`
+directly** — most commonly the **Unraid Compose Manager plugin**'s own
+"Update Stack"/"Compose Up" button, which runs `docker compose pull`/`up`
+itself.
+
+**Solution:**
+```bash
+# 1. Edit this stack's .env and give it a unique name, e.g.:
+CONTAINER_NAME=claude-code-dock-dev
+
+# 2. Re-run the stack's "Compose Up" (Unraid) or:
+docker compose up -d
+```
+If you don't recognize the other container holding the name, check what it
+is before touching it — it may be an unrelated stack's already-running
+session, not a stale leftover:
+```bash
+docker inspect --format '{{.Name}} — {{.Image}} — {{.State.Status}}' <id-from-the-error>
+```
+
+---
+
 ## Collecting Information for Bug Reports
 
 If you need to report a bug, collect this information:
