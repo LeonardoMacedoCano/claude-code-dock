@@ -47,7 +47,16 @@ docker logs claude-code-dock
 
 **A) Permission error on the config volume:**
 
-The entrypoint validates this on every start and now fails with a boxed,
+`docker-compose.yml`'s `claude-code-dock-init` service already does this
+`chown` automatically, once, before the main container starts on every
+`docker compose up` — including a bare one run by Unraid's Compose Manager
+plugin or anything else that isn't `install.sh`/`new-session.sh`. So this
+should only still happen if that init container itself couldn't chown the
+path (check its logs: `docker logs <container_name>-init`) — typically a
+filesystem that refuses `chown` to an arbitrary UID (NFS with root-squash,
+some rootless Docker setups). In that case, fix it manually the same way:
+
+The entrypoint validates this on every start and fails with a boxed,
 explicit message instead of a bare `EACCES` — look for `✗ FATAL: Config
 directory is not writable` in the logs. Fix:
 ```bash
