@@ -74,7 +74,11 @@ test_mode() {
     # without root/sudo either way -- these are throwaway dirs under mktemp.
     chmod 0777 "${mode_dir}/workspace" "${mode_dir}/config"
 
-    if ! docker run -d --name "${name}" \
+    # -i -t mirrors docker-compose.yml's stdin_open/tty (required for the
+    # tmux session entrypoint.sh execs into -- without a PTY, `tmux
+    # new-session` fails with "open terminal failed: not a terminal" and
+    # the session, and thus the healthcheck, never comes up.
+    if ! docker run -d -i -t --name "${name}" \
             -e AUTO_START_MODE="${mode}" \
             -e REMOTE_SESSION_NAME="smoke-${mode}" \
             -v "${mode_dir}/workspace:/workspace" \
