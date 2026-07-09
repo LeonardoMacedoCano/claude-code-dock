@@ -32,6 +32,7 @@ SHELL_FILES=(
   "$PROJECT_DIR/scripts/logs.sh"
   "$PROJECT_DIR/scripts/claude.sh"
   "$PROJECT_DIR/scripts/remote.sh"
+  "$PROJECT_DIR/tests/smoke.sh"
 )
 
 echo -e "${CYAN}[→]${RESET} ${BOLD}shellcheck${RESET}"

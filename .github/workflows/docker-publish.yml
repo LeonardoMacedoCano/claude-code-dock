@@ -41,8 +41,27 @@ jobs:
       - name: Run test suite
         run: bash tests/run.sh
 
-  build-and-push:
+  smoke-test:
     needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # tests/run.sh above only exercises entrypoint.sh's logic against a
+      # mocked `docker` (bats). Nothing in that job ever actually builds the
+      # image and boots a real container, so a regression that only manifests
+      # at real-container runtime (setpriv/tmux interaction, a HEALTHCHECK CMD
+      # that doesn't parse, a `set -e` trap on a real failing command) could
+      # pass every bats test and still reach GHCR. This builds the image once
+      # (single platform, amd64 -- the multi-arch build below is unaffected)
+      # and boots a real container per AUTO_START_MODE, gating the publish
+      # job on Docker's own HEALTHCHECK actually going "healthy".
+      - name: Build image and boot real containers (all AUTO_START_MODE values)
+        run: bash tests/smoke.sh
+
+  build-and-push:
+    needs: [test, smoke-test]
     runs-on: ubuntu-latest
     permissions:
       contents: read
