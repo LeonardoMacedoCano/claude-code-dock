@@ -290,6 +290,51 @@ check_env() {
             ;;
     esac
     ok "AUTO_START_MODE: ${AUTO_START_MODE:-interactive}"
+
+    check_auto_approve_safety
+}
+
+# CLAUDE_AUTO_APPROVE=true means Claude runs with --dangerously-skip-permissions
+# -- no per-command human checkpoint. Combined with restart:unless-stopped and
+# no CPU/memory ceiling (docker-compose.yml's deploy: resources block ships
+# commented out, since a hardcoded default would be wrong for most hosts —
+# see that file), a single runaway or misbehaving command has nothing to cap
+# how much of the host it can consume. This can't be silently defaulted for
+# the operator (the right limit depends on their hardware), so instead of
+# either ignoring it or blocking outright, this surfaces the risk and
+# requires an explicit "yes, I understand" before continuing -- consistent
+# with this script already confirming before other host-affecting actions
+# (creating directories, chown). entrypoint.sh logs the same warning on every
+# container start, so it's visible even when the container was brought up by
+# something other than this script (a bare `docker compose up`, Unraid's
+# Compose Manager plugin, scripts/update.sh, scripts/session-up.sh).
+check_auto_approve_safety() {
+    if [ "${CLAUDE_AUTO_APPROVE:-false}" != "true" ]; then
+        return
+    fi
+
+    step "Checking CLAUDE_AUTO_APPROVE safety..."
+
+    if grep -qE '^\s*deploy:\s*$' "${COMPOSE_FILE}" "${OVERRIDE_FILE}" 2>/dev/null; then
+        ok "CLAUDE_AUTO_APPROVE=true with resource limits active (deploy: block uncommented)."
+        return
+    fi
+
+    warn "CLAUDE_AUTO_APPROVE=true with no CPU/memory limits configured."
+    echo ""
+    echo -e "  With --dangerously-skip-permissions, Claude Code runs commands with no"
+    echo -e "  per-command human checkpoint. Nothing currently caps how much CPU or"
+    echo -e "  memory a single Claude-issued command can consume on this host."
+    echo ""
+    echo -e "  Recommended: uncomment and size the ${BOLD}deploy: → resources:${RESET} block near the"
+    echo -e "  bottom of ${BOLD}docker-compose.yml${RESET} to match your hardware before continuing."
+    echo -e "  See docs/security.md#credential-protection (point 6) for the full risk,"
+    echo -e "  especially if GITHUB_TOKEN_FILE is also set for this session."
+    echo ""
+    read -r -p "  Continue anyway, without resource limits? [y/N]: " CONTINUE_UNSAFE
+    if [[ "${CONTINUE_UNSAFE,,}" != "y" ]]; then
+        fail "Aborted — set resource limits in docker-compose.yml (or unset CLAUDE_AUTO_APPROVE), then re-run."
+    fi
 }
 
 setup_directories() {
