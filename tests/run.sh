@@ -47,6 +47,7 @@ BATS_FILES=(
   "$SCRIPT_DIR/backup_restore.bats"
   "$SCRIPT_DIR/healthcheck.bats"
   "$SCRIPT_DIR/status_update_check.bats"
+  "$SCRIPT_DIR/status_json.bats"
   "$SCRIPT_DIR/session_up.bats"
   "$SCRIPT_DIR/watchdog.bats"
 )

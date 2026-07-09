@@ -102,6 +102,17 @@ else
     echo -e "  ${RED}✗${RESET} docker-compose.yml + docker-compose.watchdog.yml"
     ERRORS=$((ERRORS + 1))
   fi
+
+  # docker-compose.resources.yml is the same kind of explicit, non-auto-loaded
+  # overlay as docker-compose.watchdog.yml (see its own header comment) --
+  # merges a deploy: block into the existing claude-code-dock service rather
+  # than adding a new one, so validate it layered the same way.
+  if $COMPOSE_CMD -f "$PROJECT_DIR/docker-compose.yml" -f "$PROJECT_DIR/docker-compose.resources.yml" config --quiet 2>&1; then
+    echo -e "  ${GREEN}✓${RESET} docker-compose.yml + docker-compose.resources.yml"
+  else
+    echo -e "  ${RED}✗${RESET} docker-compose.yml + docker-compose.resources.yml"
+    ERRORS=$((ERRORS + 1))
+  fi
 fi
 
 echo ""
