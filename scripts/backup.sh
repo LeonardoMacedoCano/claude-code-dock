@@ -12,6 +12,7 @@ INCLUDE_WORKSPACE=false
 QUIET=false
 ENCRYPT=false
 MASKED_ENV_TMPDIR=""
+BACKUP_HAS_CONFIG=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -213,6 +214,7 @@ create_backup_archive() {
     if [ -d "${CONFIG_DIR}" ] && [ -n "$(ls -A "${CONFIG_DIR}" 2>/dev/null)" ]; then
         has_config=true
     fi
+    BACKUP_HAS_CONFIG="${has_config}"
 
     if [ -d "${PROJECT_DIR}/workspaces" ] && [ -n "$(ls -A "${PROJECT_DIR}/workspaces" 2>/dev/null)" ]; then
         has_workspace=true
@@ -323,6 +325,13 @@ print_result() {
     log ""
     log "  File: ${BOLD}${BACKUP_FILE}${RESET}"
     log ""
+    if [ "${BACKUP_HAS_CONFIG}" == "true" ] && [ "${ENCRYPT}" != "true" ]; then
+        log "  ${YELLOW}${BOLD}Note:${RESET} ${YELLOW}this archive includes your Claude Code session credentials"
+        log "  (${CONFIG_DIR}), stored in plaintext inside the .tar.gz. Anyone who"
+        log "  gets a copy of this file can use them. Store it somewhere access-controlled,"
+        log "  or re-run with ${BOLD}--encrypt${RESET} to get a GPG-encrypted archive instead.${RESET}"
+        log ""
+    fi
     if [[ "${BACKUP_FILE}" == *.gpg ]]; then
         log "  To restore:"
         log "  ${BOLD}gpg --decrypt ${BACKUP_FILE} > $(basename "${BACKUP_FILE}" .gpg)${RESET}"
