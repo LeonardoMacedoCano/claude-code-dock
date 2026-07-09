@@ -179,7 +179,8 @@ directly. `docker exec claude-code-dock env` will never show these.
 | `CLAUDE_SOURCE_PATH` | `docker-compose.yml` `build:` | Local clone to build from instead of pulling (advanced/dev) — see [Local development](#local-development) |
 | `BACKUP_RETENTION` | `scripts/backup.sh` | Backups kept per session (default `10`) |
 | `BACKUP_ENCRYPT_PASSPHRASE` | `scripts/backup.sh --encrypt` | Non-interactive GPG passphrase |
-| `WATCHDOG_NTFY_URL` | `scripts/watchdog.sh` | Webhook notified on restart/skip (read by the host cron job, never the container) |
+| `WATCHDOG_NTFY_URL` | `scripts/watchdog.sh` | Webhook notified on restart/skip — read on the host for the crontab path, or passed into the sidecar's environment for the `docker-compose.watchdog.yml` path; see [Watchdog](#watchdog) below |
+| `WATCHDOG_INTERVAL` | `docker-compose.watchdog.yml` | Seconds between checks — only used by the sidecar path, default `300` |
 
 ---
 
@@ -229,6 +230,60 @@ tail -f ./configs/<session>/logs/dock.log
 ```
 
 It is capped at ~2000 lines and trimmed automatically on each container start.
+
+---
+
+## Watchdog
+
+`restart: unless-stopped` in `docker-compose.yml` only reacts to the
+container actually **exiting**. Docker never auto-restarts a container that
+is still running but reports `unhealthy` (e.g. a wedged tmux pane where
+nothing has actually crashed) — that gap needs something to periodically
+check `docker inspect`'s health status and act on it. Two ways to close it;
+pick one, they're not meant to be combined:
+
+### Option 1 — host crontab (recommended)
+
+```bash
+./scripts/install.sh --with-watchdog
+```
+
+Adds a crontab entry that runs `scripts/watchdog.sh` every 5 minutes,
+idempotently (safe to re-run; the entry is only added once). No extra
+container, no elevated Docker access — the script runs directly on the host
+and talks to the Docker daemon the same way any other host-side `docker`
+command does. This is the default recommendation specifically because it
+needs no more host privilege than you already have by being able to run
+`docker` commands at all.
+
+If `crontab` isn't available on this host (some minimal NAS OSes don't
+expose one over SSH), `install.sh --with-watchdog` says so and prints the
+line to schedule with whatever mechanism the platform does offer.
+
+### Option 2 — sidecar container
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.watchdog.yml up -d
+```
+
+A second, small container (`docker/Dockerfile.watchdog`) that loops
+`scripts/watchdog.sh` on an interval instead of cron. Useful only if this
+host genuinely has no cron access for the container-owning user. It works by
+mounting `/var/run/docker.sock` read-write into that sidecar so it can call
+`docker inspect`/`docker restart` on the main container — **and that mount
+is root-equivalent access to the Docker daemon**, meaning the sidecar (or
+anything that compromises it) can inspect, control, or escape into *any*
+container on this host, not just this one. This is a materially different
+security posture than the rest of claude-code-dock, which otherwise needs no
+host-level privilege and exposes no ports at all (see
+[Security](security.md)). Read `docker-compose.watchdog.yml`'s header
+comment before enabling it, and prefer Option 1 whenever cron is available.
+
+Both options read `WATCHDOG_NTFY_URL` (optional webhook, e.g. an ntfy.sh
+topic) for a notification whenever the watchdog actually restarts the
+container, fails to restart it, or skips it because `entrypoint.sh`'s
+`fatal()` marker shows this is a persistent misconfiguration rather than a
+wedged process (see `scripts/watchdog.sh --help` for the full behavior).
 
 ---
 

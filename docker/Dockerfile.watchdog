@@ -1,0 +1,17 @@
+# Optional companion image for the watchdog sidecar (docker-compose.watchdog.yml).
+# NOT part of the main claude-code-dock image and not built by default -- see
+# docker-compose.watchdog.yml for how this gets opted into, and the
+# docker.sock privilege trade-off it accepts in exchange for not needing a
+# host crontab (compare: scripts/install.sh --with-watchdog).
+FROM docker:cli
+
+# bash: scripts/watchdog.sh uses bash-specific syntax ([[ ]], ${var,,}).
+# curl: optional WATCHDOG_NTFY_URL notifications in watchdog.sh.
+# Installed at build time (not on every container start) so restarting this
+# sidecar doesn't re-run apk on the network each time.
+RUN apk add --no-cache bash curl
+
+COPY --chmod=755 scripts/watchdog.sh /usr/local/bin/watchdog.sh
+COPY --chmod=755 docker/watchdog-entrypoint.sh /usr/local/bin/watchdog-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/watchdog-entrypoint.sh"]
