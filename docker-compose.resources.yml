@@ -1,0 +1,35 @@
+# Optional companion overlay: applies CPU/memory limits to the main
+# claude-code-dock service. NOT included by default and NOT auto-loaded by
+# Compose (unlike docker-compose.override.yml, which install.sh/update.sh/
+# session-up.sh manage automatically for CLAUDE_SOURCE_PATH) -- opt in
+# explicitly:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d
+#
+# Why a separate file instead of a commented-out block in docker-compose.yml:
+# docker-compose.override.yml is already scripts-managed (see
+# sync_override_file() in install.sh/update.sh/session-up.sh) -- its contents
+# are regenerated or the file is deleted outright based on CLAUDE_SOURCE_PATH
+# alone, so anything else placed in it would be silently clobbered on the
+# next run of those scripts. Editing docker-compose.yml itself means
+# hand-editing a file tracked by git for a value that's inherently
+# host-specific (a Raspberry Pi and a 32-core Unraid box have nothing in
+# common). A separate, explicitly opted-in overlay avoids both problems,
+# using the exact same layering mechanism already established by
+# docker-compose.watchdog.yml -- see that file's header comment.
+#
+# Sizing this is your responsibility -- there is no safe universal default,
+# which is why it isn't merged into docker-compose.yml directly. Recommended
+# especially when CLAUDE_AUTO_APPROVE=true: with no per-command human
+# checkpoint, nothing else in this project caps how much CPU/memory a single
+# Claude-issued command can consume on this host. See
+# docs/security.md#credential-protection (point 6).
+services:
+  claude-code-dock:
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
+        reservations:
+          memory: 512m

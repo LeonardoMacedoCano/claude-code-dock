@@ -71,16 +71,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    # Resource limits — left commented by default since a hardcoded value
-    # would be wrong for most hosts (a Raspberry Pi and a 32-core Unraid box
-    # have nothing in common). Uncomment and size to your own hardware,
-    # especially if CLAUDE_AUTO_APPROVE=true: with no per-command human
-    # checkpoint, nothing else in this project caps how much CPU/memory a
-    # single Claude-issued command can consume on this host.
-    # deploy:
-    #   resources:
-    #     limits:
-    #       cpus: '2'
-    #       memory: 2g
-    #     reservations:
-    #       memory: 512m
+    # Resource limits (CPU/memory) live in the opt-in docker-compose.resources.yml
+    # overlay instead of here -- a hardcoded value in this tracked file would be
+    # wrong for most hosts (a Raspberry Pi and a 32-core Unraid box have nothing
+    # in common). See that file's header comment, especially if
+    # CLAUDE_AUTO_APPROVE=true: with no per-command human checkpoint, nothing
+    # else in this project caps how much CPU/memory a single Claude-issued
+    # command can consume on this host.
+    #   docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d

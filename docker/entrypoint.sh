@@ -228,7 +228,7 @@ log_step "Startup configuration:"
 log_info "Execution mode:    ${BOLD}${AUTO_START_MODE:-interactive}${RESET}"
 log_info "Auto-approve:      ${BOLD}${CLAUDE_AUTO_APPROVE:-false}${RESET}"
 if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
-    log_warn "CLAUDE_AUTO_APPROVE=true: Claude runs commands with no per-command confirmation. Set a CPU/memory ceiling in docker-compose.yml's 'deploy:' block if this host has no other cap on it. See docs/security.md#credential-protection."
+    log_warn "CLAUDE_AUTO_APPROVE=true: Claude runs commands with no per-command confirmation. Set a CPU/memory ceiling via docker-compose.resources.yml if this host has no other cap on it. See docs/security.md#credential-protection."
 fi
 log_info "Running as:        ${BOLD}$(id -un 2>/dev/null || echo node) (uid=${PUID:-1000}, gid=${PGID:-1000})${RESET}"
 if [ -n "${REMOTE_SESSION_NAME:-}" ]; then
