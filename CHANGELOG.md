@@ -9,11 +9,6 @@ here are dated rather than numbered. Check this file before running
 ## Unreleased
 
 ### Added
-- `scripts/doctor.sh` — read-only preflight command. Flags `CLAUDE_SOURCE_PATH`
-  accidentally equal to `WORKSPACE_PATH`/`CONFIG_BASE_PATH`, host directories
-  owned by the wrong UID/GID, a stale or missing `docker-compose.override.yml`,
-  and a running container whose baked-in config has drifted from the
-  currently-loaded `.env`. Changes nothing — safe to run any time.
 - `docker/entrypoint.sh` / `docker/claude-remote-launch.sh` now log how long
   each startup step took, a one-line summary (mode, container name, session),
   and — persisted to `~/.claude/logs/dock.log`, which survives `tmux` taking

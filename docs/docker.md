@@ -514,7 +514,7 @@ docker logs --tail 30 claude-code-dock
 You'll see a boxed `✗ FATAL: ...` message naming the exact problem and the
 fix, typically one of:
 1. `AUTO_START_MODE` set to something other than `interactive`/`remote`/`shell` (a typo)
-2. The config or workspace directory is not writable by UID 1000 (`node`) — usually because `CONFIG_BASE_PATH`/`WORKSPACE_PATH` is unset or misspelled, or because Docker auto-created the directory as `root:root` on this session's first start. Fix with a one-time `chown -R <PUID>:<PGID> <path>` on the host (`./scripts/doctor.sh` reports exactly which path and owner)
+2. The config or workspace directory is not writable by UID 1000 (`node`) — usually because `CONFIG_BASE_PATH`/`WORKSPACE_PATH` is unset or misspelled, or because Docker auto-created the directory as `root:root` on this session's first start. Fix with a one-time `chown -R <PUID>:<PGID> <path>` on the host (`stat -c '%u:%g' <path>` shows the current owner)
 
 If the container is still actually restarting (not just holding), the crash
 is happening somewhere the validation doesn't cover yet — check the full log

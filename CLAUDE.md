@@ -597,25 +597,6 @@ Set `AUTO_START_MODE=remote` in `.env`.
 
 ---
 
-### `scripts/doctor.sh`
-
-**Responsibility:** Read-only preflight checks, run on demand (not scheduled) — surfaces misconfiguration *before* it turns into an `entrypoint.sh` `fatal()` or a support conversation.
-
-**Why this exists:** every check `entrypoint.sh` runs happens inside the container, after `docker compose up` already committed to starting it — a misconfigured host directory, a stale `docker-compose.override.yml`, or `.env` drift from a running container all surface as an opaque failure several steps removed from the actual cause. This script runs the same checks (and a few host-only ones `entrypoint.sh` structurally can't do, like comparing a running container's baked-in env against the currently-loaded `.env`) from outside, before anything is started or recreated. Changes nothing on disk or in Docker — safe to run at any time, including "why is this weird" troubleshooting.
-
-**Checks:**
-1. `docker` present in `PATH` (hard requirement for the rest of this script; `fail()`s immediately if missing, unlike every other check below which only `warn()`s)
-2. Required vars set: `REMOTE_SESSION_NAME`, `WORKSPACE_PATH`, `CONFIG_BASE_PATH`
-3. `CLAUDE_SOURCE_PATH` equal to `WORKSPACE_PATH` or `CONFIG_BASE_PATH` — almost always an accidental copy-paste of the wrong variable rather than the (rare, valid) case of using claude-code-dock to develop claude-code-dock itself
-4. `CLAUDE_SOURCE_PATH` set but `docker-compose.override.yml` missing (local build silently not actually happening yet), or the reverse — override present forcing a local build with `CLAUDE_SOURCE_PATH` now unset (stale, left over from a build source that was since switched back to the published image)
-5. Host ownership of `WORKSPACE_PATH` and `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (if they already exist) against `PUID`/`PGID` — catches the #1 cause of a `fatal()` on a session's first start: Docker auto-creating a missing bind-mount source directory as `root:root` before `install.sh`/`new-session.sh` got a chance to chown it
-6. If a container named `CONTAINER_NAME` is running, its baked-in `AUTO_START_MODE`/`CLAUDE_AUTO_APPROVE`/`REMOTE_SESSION_NAME` env vars are compared against the currently-loaded environment — Compose never live-reloads `environment:` values into an already-running container, so an edited `.env` can silently have zero effect until a `--force-recreate`
-7. Whether persistent login credentials (`.claude.json`) already exist for this session — informational, not a problem either way
-
-**Must not:** write, chown, or otherwise mutate anything — this is a read-only diagnostic, not a fixer. `install.sh`/`new-session.sh` are what actually fix permissions, on the host, before the container starts; this script only reports whether that already happened.
-
----
-
 ## Conventions
 
 ### Environment Variables
@@ -754,7 +735,7 @@ Architecture above), no host-level privilege needed at all.
 - [x] Dockerfile with Claude Code (node user, non-root)
 - [x] docker-compose.yml with persistent volumes
 - [x] Three execution modes (interactive/remote/shell)
-- [x] Management scripts (install, update, backup, restore, attach, shell, logs, claude, remote, status, watchdog, new-session, session-up, sessions, doctor)
+- [x] Management scripts (install, update, backup, restore, attach, shell, logs, claude, remote, status, watchdog, new-session, session-up, sessions)
 - [x] AUTO_START_MODE, CLAUDE_AUTO_APPROVE, CLAUDE_EXTRA_ARGS, GITHUB_TOKEN_FILE variables
 - [x] Complete documentation (Docker, Unraid, Troubleshooting, Security, Architecture)
 - [x] Dockerfile `HEALTHCHECK` + `scripts/watchdog.sh` for external monitoring/auto-restart on `unhealthy`
@@ -774,7 +755,6 @@ Architecture above), no host-level privilege needed at all.
 - [x] `/etc/claude-dock-packages.list`: `dpkg -l` snapshot baked into the image, so an unpinned `apt-get upgrade` build is bisectable after the fact
 - [x] `scripts/status.sh --json`: machine-readable output for homelab dashboard integration (Homepage, Uptime Kuma, Grafana, ...)
 - [x] Startup timing + an explicit "ACTION REQUIRED" log block in `entrypoint.sh`/`docker/claude-remote-launch.sh`, persisted to `dock.log`: says which step startup is on, how long each step took, and — when a manual login or remote-control pairing is still pending — the exact `docker exec` command to run, since `docker logs` stops showing readable text the moment `tmux` takes over the tty
-- [x] `scripts/doctor.sh`: read-only preflight command catching the class of misconfiguration that otherwise takes several rounds of troubleshooting to notice (path variables collapsed onto each other, permission drift, a stale `docker-compose.override.yml`, a running container acting on an already-edited `.env`)
 - [x] `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE` safety confirmation `install.sh` already had
 - [x] CI validates `docker-compose.yml` (`docker compose config`, all overlays) and `tests/smoke.sh` now also boots via a real `docker compose up` and runs an end-to-end disaster-recovery drill through the real `backup.sh`/`restore.sh`
 - [x] `scripts/update.sh` waits for `healthy` (not just `Running`) after updating and automatically rolls back to the previous image if it isn't, instead of leaving a broken container up
