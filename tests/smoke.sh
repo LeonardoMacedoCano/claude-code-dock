@@ -153,8 +153,17 @@ test_compose_up() {
 
     log "Testing 'docker compose up'..."
 
-    mkdir -p "${cdir}/workspace" "${cdir}/config"
-    chmod 0777 "${cdir}/workspace" "${cdir}/config"
+    # docker-compose.yml's config volume source is CONFIG_BASE_PATH/REMOTE_SESSION_NAME
+    # (a subdirectory), not CONFIG_BASE_PATH itself -- unlike test_mode() above,
+    # which mounts its config dir directly. Since claude-code-dock-init (which
+    # used to pre-create/chown this exact subdirectory as part of `docker
+    # compose up` itself) was removed as redundant with install.sh/new-session.sh,
+    # a raw `docker compose up` against a brand-new REMOTE_SESSION_NAME -- which
+    # is exactly what this check does on purpose -- now needs the same
+    # subdirectory created here too, or Docker auto-creates it as root and
+    # validate_config() correctly (and intentionally) fatal()s on it.
+    mkdir -p "${cdir}/workspace" "${cdir}/config/smoke-compose"
+    chmod 0777 "${cdir}/workspace" "${cdir}/config" "${cdir}/config/smoke-compose"
 
     cat > "${envfile}" <<ENV
 WORKSPACE_PATH=${cdir}/workspace
