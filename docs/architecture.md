@@ -258,6 +258,52 @@ for a signal. The container shows as `Up`, the error stays as the last
 line in `docker logs`, and `docker stop`/`compose down` still work
 normally since `sleep` terminates on `SIGTERM` by default.
 
+### Why does `container_name:` default to the flat literal `claude-code-dock`, not something derived from `REMOTE_SESSION_NAME`?
+
+Every host-side script (`status.sh`, `logs.sh`, `attach.sh`, `shell.sh`,
+`claude.sh`, `remote.sh`, `watchdog.sh`) resolves its target container name
+via its own flat `${CONTAINER_NAME:-claude-code-dock}` fallback, not
+Compose's interpolation. Changing only `docker-compose.yml`'s default
+(Compose does support the nested `${VAR:-...${OTHER:-x}}` syntax that would
+be needed) would silently orphan every already-running container created
+under the old literal name and point the scripts at a name that doesn't
+exist yet — a disruptive migration for existing installs. Instead,
+`install.sh` and `new-session.sh` compensate by auto-writing
+`CONTAINER_NAME=claude-code-dock-<session>` into the `.env`/`.env.<session>`
+they generate, so the collision risk only surfaces for someone hand-editing
+`.env` per project folder without setting this var themselves (`.env.example`
+calls that out explicitly).
+
+### Why do both `image:` and `build:` coexist in `docker-compose.yml`?
+
+`image:` is what `docker compose pull` (the default install/update path)
+fetches; `build:` is the fallback used when `CLAUDE_SOURCE_PATH` is set or
+someone explicitly runs `docker compose build`. The registry/repo in
+`image:` is a hardcoded literal, not a variable — only the tag is
+configurable via `CLAUDE_DOCK_TAG` — since nobody running this project needs
+to repoint it to a different fork's registry day to day, and
+`CLAUDE_SOURCE_PATH` already covers local development.
+
+Because both fields coexist, Compose only builds when the tag isn't already
+present locally — a bare `docker compose up -d` will **not** rebuild an
+already-tagged image, even with `CLAUDE_SOURCE_PATH` set. `install.sh` /
+`update.sh` / `session-up.sh` handle this by building with `--no-cache`
+explicitly, and by generating a gitignored `docker-compose.override.yml`
+next to the base file whenever `CLAUDE_SOURCE_PATH` is set (removed again
+when it's unset). That override sets `image: claude-code-dock:local` and
+`pull_policy: build`; Compose auto-loads it for *any* `docker compose`
+invocation run from the same directory — including a bare `docker compose
+up -d` run by a tool that doesn't know this project's conventions, e.g.
+Unraid's Compose Manager plugin — as long as one of those three scripts has
+generated the override at least once.
+
+This branching is deliberately **not** expressed as `${CLAUDE_SOURCE_PATH:-x}`
+interpolation directly on `image:`/`pull_policy:` in the base file — it was
+tried and reverted. Compose's substitution has no leak-free way to turn an
+arbitrary host path into a fixed tag/policy value: the raw path commonly
+contains `/`, which breaks a field that doesn't tolerate it. The generated
+override file is the correct mechanism; see `docs/docker.md#local-development`.
+
 ---
 
 ## Security Model
