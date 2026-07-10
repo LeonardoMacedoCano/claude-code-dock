@@ -753,7 +753,6 @@ Architecture above), no host-level privilege needed at all.
 - [x] `docker-compose.resources.yml`: opt-in CPU/memory limit overlay (explicit `-f`, never auto-loaded), replacing the commented-out `deploy:` block that used to live in `docker-compose.yml` itself
 - [x] `SHARED_CONFIG_PATH` mount now falls back to `/dev/null` (like `GITHUB_TOKEN_FILE`) instead of a real host directory when unset — no more unexplained `./shared-config/` created for a feature nobody opted into
 - [x] `/etc/claude-dock-packages.list`: `dpkg -l` snapshot baked into the image, so an unpinned `apt-get upgrade` build is bisectable after the fact
-- [x] `scripts/status.sh --json`: machine-readable output for homelab dashboard integration (Homepage, Uptime Kuma, Grafana, ...)
 - [x] Startup timing + an explicit "ACTION REQUIRED" log block in `entrypoint.sh`/`docker/claude-remote-launch.sh`, persisted to `dock.log`: says which step startup is on, how long each step took, and — when a manual login or remote-control pairing is still pending — the exact `docker exec` command to run, since `docker logs` stops showing readable text the moment `tmux` takes over the tty
 - [x] `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE` safety confirmation `install.sh` already had
 - [x] CI validates `docker-compose.yml` (`docker compose config`, all overlays) and `tests/smoke.sh` now also boots via a real `docker compose up` and runs an end-to-end disaster-recovery drill through the real `backup.sh`/`restore.sh`

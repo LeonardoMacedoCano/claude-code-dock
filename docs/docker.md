@@ -575,9 +575,8 @@ docker logs -f claude-code-dock
 
 # Status
 docker ps --filter name=claude-code-dock
-# or, for a full summary (human-readable or --json for dashboards):
+# or, for a full summary:
 ./scripts/status.sh
-./scripts/status.sh --json
 
 # Backup (manual, or --with-backup-cron for a daily schedule)
 ./scripts/backup.sh --encrypt
