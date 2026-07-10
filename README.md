@@ -12,11 +12,13 @@
 
 ## What It Solves
 
-Claude Remote Control requires Claude to already be running on your machine before you connect. Close the terminal, leave home, let the laptop sleep — the session is gone.
+[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) normally runs in a terminal on your own machine. Its Remote Control feature lets you drive that session from your phone or another device — but only while the terminal it started in stays open. Close the laptop, lose the network, and the session is gone.
 
-**claude-code-dock fixes that.** It runs Claude inside a Docker container on a server that never turns off. Boot, stay running, survive disconnects. Open Claude.ai from anywhere and your sessions are already there.
+**claude-code-dock fixes that.** It runs Claude inside a Docker container on a server that never turns off — homelab box, NAS, VPS. Boot, stay running, survive disconnects. Open Claude.ai from anywhere and your sessions are already there.
 
 If a session freezes (Claude stuck waiting for a permission prompt), VPN into your server, attach to the tmux session, unblock it, detach. No physical access needed.
+
+**Why trust it on your server:** no ports exposed, no authentication layer of its own (Claude Code's own login handles that), the long-running process never runs as root. Details in [Security](docs/security.md).
 
 ---
 
@@ -51,6 +53,8 @@ One server can run any number of containers, each with its own project and sessi
 
 ## Quick Start
 
+**Prerequisites:** Docker + Docker Compose on the server, and a Claude account you can log into when prompted (the first `tmux attach` below runs Claude Code's normal login flow — see [First login](docs/getting-started.md#4-first-login-only-once-for-the-first-container)).
+
 No local clone required — `docker compose pull` fetches the prebuilt, CI-published image from GHCR.
 
 ```bash
@@ -79,6 +83,8 @@ That covers the default setup. Want GitHub push/pull from inside the container, 
 
 ## Documentation
 
+**Using it:**
+
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | `.env` profiles, step-by-step setup, execution modes, scripts reference |
@@ -87,11 +93,15 @@ That covers the default setup. Want GitHub push/pull from inside the container, 
 | [Unraid Guide](docs/unraid.md) | Complete Unraid setup |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and solutions |
 | [Security](docs/security.md) | Credential protection, remote access |
-| [Architecture](docs/architecture.md) | tmux/PID 1 design, data flow, technical decisions |
-| [CONTRIBUTING](CONTRIBUTING.md) | Dev setup, test suite, PR checklist |
 | [CHANGELOG](CHANGELOG.md) | What changed recently — check before `./scripts/update.sh` |
 
-Deep architecture/decision reference for contributors and AI agents: [CLAUDE.md](CLAUDE.md).
+**Understanding or changing it:**
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture.md) | tmux/PID 1 design, data flow, technical decisions |
+| [CONTRIBUTING](CONTRIBUTING.md) | Dev setup, test suite, PR checklist |
+| [CLAUDE.md](CLAUDE.md) | Deep rationale reference for contributors and AI agents |
 
 ---
 
