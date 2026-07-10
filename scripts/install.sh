@@ -11,7 +11,6 @@ ENV_FILE="${PROJECT_DIR}/.env"
 ENV_EXAMPLE="${PROJECT_DIR}/.env.example"
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 WITH_WATCHDOG=false
-WITH_BACKUP_CRON=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -50,11 +49,8 @@ for arg in "$@"; do
         --with-watchdog)
             WITH_WATCHDOG=true
             ;;
-        --with-backup-cron)
-            WITH_BACKUP_CRON=true
-            ;;
         -h|--help)
-            echo "Usage: $0 [--with-watchdog] [--with-backup-cron]"
+            echo "Usage: $0 [--with-watchdog]"
             echo ""
             echo "  --with-watchdog     After installing, add a crontab entry (every 5 minutes)"
             echo "                      that runs scripts/watchdog.sh to auto-restart the"
@@ -62,12 +58,6 @@ for arg in "$@"; do
             echo "                      actually exiting (restart: unless-stopped alone doesn't"
             echo "                      catch that case). Idempotent -- safe to pass again on a"
             echo "                      later re-run; the entry is only added once."
-            echo ""
-            echo "  --with-backup-cron  After installing, add a crontab entry (daily at 03:00)"
-            echo "                      that runs scripts/backup.sh. Automatically adds --encrypt"
-            echo "                      when BACKUP_ENCRYPT_PASSPHRASE is already set in .env, so"
-            echo "                      the scheduled run stays non-interactive. Idempotent -- safe"
-            echo "                      to pass again on a later re-run; the entry is only added once."
             exit 0
             ;;
     esac
@@ -156,64 +146,6 @@ setup_watchdog_cron() {
 
     if printf '%s\n%s\n' "${existing}" "${cron_line}" | crontab - 2>/dev/null; then
         ok "Watchdog cron entry added (runs every 5 minutes):"
-        echo -e "    ${BOLD}${cron_line}${RESET}"
-    else
-        warn "Could not write the crontab automatically. Add this line manually:"
-        echo -e "    ${BOLD}${cron_line}${RESET}"
-    fi
-}
-
-# scripts/backup.sh has no equivalent of --with-watchdog on its own -- it
-# only ever runs when invoked manually. --with-backup-cron closes that gap
-# the same way, via a host crontab entry, so scheduled backups don't depend
-# on the operator remembering to run this by hand -- arguably more important
-# than the watchdog cron, since losing the config volume without a backup is
-# unrecoverable while a wedged tmux pane is just an inconvenience.
-#
-# Idempotent by design, same as setup_watchdog_cron() above: re-running this
-# (e.g. after ./scripts/update.sh) must not duplicate the cron line.
-#
-# Encryption is opt-in automatically here, not something this function
-# decides on its own: if BACKUP_ENCRYPT_PASSPHRASE is already set in .env (it
-# was sourced into the environment by check_env() before this runs), --encrypt
-# is added to the cron line so the scheduled backup stays non-interactive --
-# without a passphrase, gpg would otherwise block forever waiting on a prompt
-# with no terminal attached to a cron job. Without one set, --encrypt is
-# deliberately NOT added; see docs/security.md#credential-protection.
-setup_backup_cron() {
-    if [ "${WITH_BACKUP_CRON}" != "true" ]; then
-        return
-    fi
-
-    step "Configuring backup cron job..."
-
-    if ! command -v crontab &>/dev/null; then
-        warn "crontab not found on this host — skipping automatic setup."
-        echo -e "    Configure your platform's own scheduler to run this daily instead:"
-        echo -e "    ${BOLD}${SCRIPT_DIR}/backup.sh --quiet${RESET}"
-        return
-    fi
-
-    local backup_flags="--quiet"
-    if [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ]; then
-        backup_flags="--quiet --encrypt"
-        ok "BACKUP_ENCRYPT_PASSPHRASE is set — scheduled backups will be GPG-encrypted."
-    else
-        warn "BACKUP_ENCRYPT_PASSPHRASE is not set — scheduled backups will contain plaintext credentials."
-        echo -e "    Set it in .env to have scheduled backups encrypted automatically."
-    fi
-
-    local cron_line="0 3 * * * ${SCRIPT_DIR}/backup.sh ${backup_flags} >> ${PROJECT_DIR}/backup.log 2>&1"
-    local existing
-    existing="$(crontab -l 2>/dev/null || true)"
-
-    if echo "${existing}" | grep -qF "${SCRIPT_DIR}/backup.sh"; then
-        ok "Backup cron entry already present for this host — left unchanged."
-        return
-    fi
-
-    if printf '%s\n%s\n' "${existing}" "${cron_line}" | crontab - 2>/dev/null; then
-        ok "Backup cron entry added (runs daily at 03:00):"
         echo -e "    ${BOLD}${cron_line}${RESET}"
     else
         warn "Could not write the crontab automatically. Add this line manually:"
@@ -540,12 +472,6 @@ print_next_steps() {
         echo -e "     or see ${BOLD}./scripts/watchdog.sh --help${RESET}."
         echo ""
     fi
-    if [ "${WITH_BACKUP_CRON}" != "true" ]; then
-        echo -e "  ${CYAN}9.${RESET} (optional) Back up credentials automatically every day:"
-        echo -e "     re-run ${BOLD}./scripts/install.sh --with-backup-cron${RESET}"
-        echo -e "     or see ${BOLD}./scripts/backup.sh --help${RESET}."
-        echo ""
-    fi
     echo -e "  ${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo ""
 }
@@ -559,7 +485,6 @@ main() {
     build_image
     start_services
     setup_watchdog_cron
-    setup_backup_cron
     print_next_steps
 }
 

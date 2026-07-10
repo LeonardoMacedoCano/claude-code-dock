@@ -178,7 +178,6 @@ directly. `docker exec claude-code-dock env` will never show these.
 | `CLAUDE_DOCK_VERSION` | `docker-compose.yml` `build:` | Git ref to build from when the pull fails and `CLAUDE_SOURCE_PATH` is unset (default `main`) |
 | `CLAUDE_SOURCE_PATH` | `docker-compose.yml` `build:` | Local clone to build from instead of pulling (advanced/dev) — see [Local development](#local-development) |
 | `BACKUP_RETENTION` | `scripts/backup.sh` | Backups kept per session (default `10`) |
-| `BACKUP_ENCRYPT_PASSPHRASE` | `scripts/backup.sh --encrypt` | Non-interactive GPG passphrase |
 | `WATCHDOG_NTFY_URL` | `scripts/watchdog.sh` | Webhook notified on restart/skip — read on the host by the crontab path; see [Watchdog](#watchdog) below |
 
 ---
@@ -273,33 +272,24 @@ either manual or triggered by whatever calls it.
 ```bash
 # One-off, manual
 ./scripts/backup.sh
-
-# Encrypted (GPG, AES256, symmetric)
-./scripts/backup.sh --encrypt
 ```
+
+The archive is always plaintext — pipe it through `gpg` yourself before
+moving it anywhere untrusted (see
+[Security: Credential Protection](security.md#credential-protection)).
 
 ### Automatic daily backups
 
-```bash
-./scripts/install.sh --with-backup-cron
-```
+Set up your own host crontab entry, e.g.:
 
-Adds a crontab entry that runs `scripts/backup.sh --quiet` daily at 03:00,
-idempotently (safe to re-run; the entry is only added once) — the same
-mechanism as `--with-watchdog` above, and can be combined with it in the same
-`install.sh` invocation. If `BACKUP_ENCRYPT_PASSPHRASE` is already set in
-`.env` at the time this runs, `--encrypt` is added to the cron line
-automatically so the scheduled run stays non-interactive; without a
-passphrase set, `--encrypt` is deliberately left off — `gpg` would otherwise
-block the cron job indefinitely waiting on an interactive prompt with no
-terminal attached to answer it.
+```bash
+(crontab -l 2>/dev/null; echo "0 3 * * * $(pwd)/scripts/backup.sh --quiet") | crontab -
+```
 
 This is worth setting up even if you skip the watchdog: losing the config
 volume with no backup means re-authenticating Claude Code from scratch and
 losing session history, whereas a wedged tmux pane (what the watchdog
-guards against) is just an inconvenience. See
-[Security: Credential Protection](security.md#credential-protection) for the
-full backup encryption story.
+guards against) is just an inconvenience.
 
 ---
 
@@ -578,9 +568,8 @@ docker ps --filter name=claude-code-dock
 # or, for a full summary:
 ./scripts/status.sh
 
-# Backup (manual, or --with-backup-cron for a daily schedule)
-./scripts/backup.sh --encrypt
-./scripts/install.sh --with-backup-cron
+# Backup (manual; set up your own host crontab entry for a daily schedule)
+./scripts/backup.sh
 
 # Apply CPU/memory limits (edit docker-compose.resources.yml first)
 docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d

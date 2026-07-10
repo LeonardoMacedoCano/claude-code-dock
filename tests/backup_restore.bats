@@ -2,8 +2,8 @@
 
 # Roundtrip coverage for backup.sh + restore.sh together: create data, back it
 # up, simulate loss/corruption, restore, and assert the data actually comes
-# back byte-for-byte. Existing tests cover retention and encryption on the
-# backup side only -- none exercised restore.sh at all before this file.
+# back byte-for-byte. Existing tests cover retention on the backup side only
+# -- none exercised restore.sh at all before this file.
 
 PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 BACKUP_SCRIPT="$PROJECT_ROOT/scripts/backup.sh"

@@ -49,28 +49,23 @@ chmod 600 "${CONFIG_DIR}"/* 2>/dev/null || true
 ls -la "${CONFIG_DIR}"
 ```
 
-**3. Encrypted backups (recommended, especially for offsite/NAS destinations):**
+**3. Encrypt backups yourself (recommended, especially for offsite/NAS destinations):**
 
-`scripts/backup.sh` supports encryption natively — no manual `gpg` piping needed:
+`scripts/backup.sh` always produces a plaintext `.tar.gz` containing your Claude Code session credentials — it has no built-in encryption. Pipe it through `gpg` yourself before moving it anywhere untrusted:
 
 ```bash
-# Prompts for a passphrase interactively (GPG symmetric, AES256)
-./scripts/backup.sh --encrypt
-
-# Non-interactive (e.g. from cron): set a passphrase via env or .env
-BACKUP_ENCRYPT_PASSPHRASE='your-strong-passphrase' ./scripts/backup.sh --encrypt
+./scripts/backup.sh
+gpg --symmetric --cipher-algo AES256 -o backup.tar.gz.gpg ./backups/claude-code-dock-backup-*.tar.gz
 ```
 
-This produces `claude-code-dock-backup-*.tar.gz.gpg` instead of the plaintext archive. Restore with:
+Restore with:
 
 ```bash
-gpg --decrypt claude-code-dock-backup-2024-01-01_12-00-00.tar.gz.gpg > backup.tar.gz
+gpg --decrypt backup.tar.gz.gpg > backup.tar.gz
 ./scripts/restore.sh backup.tar.gz
 ```
 
-Requires `gpg` on the host running the backup script (not inside the container).
-
-To have this run automatically instead of relying on remembering to do it, set `BACKUP_ENCRYPT_PASSPHRASE` in `.env` and run `./scripts/install.sh --with-backup-cron` — it adds a daily host crontab entry and automatically includes `--encrypt` when that passphrase is already set (see [Docker Reference: Backups](docker.md#backups)).
+Requires `gpg` on the host (not inside the container). Set up your own host crontab entry if you want this to run on a schedule instead of relying on remembering to do it manually.
 
 **4. Never share the config directory:**
 
@@ -301,7 +296,7 @@ trivy image claude-code-dock_claude-code-dock
 [ ] .env is in .gitignore
 [ ] No Docker ports are exposed
 [ ] Server access is via SSH with public key
-[ ] Backups of the config directory are stored securely (prefer scripts/backup.sh --encrypt) and actually happen on a schedule, not only when remembered manually (`./scripts/install.sh --with-backup-cron`)
+[ ] Backups of the config directory are stored securely (pipe through `gpg` before moving them offsite) and actually happen on a schedule (e.g. a host crontab entry running `scripts/backup.sh`), not only when remembered manually
 [ ] The server is not directly exposed to the internet
 [ ] VPN configured for external access (if needed)
 [ ] Container runs as node user (not root) -- verify with: docker exec claude-code-dock whoami

@@ -10,7 +10,6 @@ TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR="${PROJECT_DIR}/backups"
 INCLUDE_WORKSPACE=false
 QUIET=false
-ENCRYPT=false
 MASKED_ENV_TMPDIR=""
 BACKUP_HAS_CONFIG=false
 
@@ -35,19 +34,12 @@ while [[ $# -gt 0 ]]; do
             QUIET=true
             shift
             ;;
-        --encrypt)
-            ENCRYPT=true
-            shift
-            ;;
         -h|--help)
-            echo "Usage: $0 [--output DIR] [--include-workspace] [--quiet] [--encrypt]"
+            echo "Usage: $0 [--output DIR] [--include-workspace] [--quiet]"
             echo ""
             echo "  --output DIR          Backup destination directory (default: ./backups/)"
             echo "  --include-workspace   Include external workspace in backup"
             echo "  --quiet               Quiet mode (for use by other scripts)"
-            echo "  --encrypt             Encrypt the archive with GPG (AES256, symmetric)."
-            echo "                        Passphrase from \$BACKUP_ENCRYPT_PASSPHRASE (env or .env),"
-            echo "                        or an interactive gpg prompt if unset. Requires gpg on the host."
             exit 0
             ;;
         *)
@@ -129,10 +121,10 @@ load_env() {
 
     if [ -n "${REMOTE_SESSION_NAME}" ]; then
         BACKUP_NAME="claude-code-dock-${REMOTE_SESSION_NAME}-backup-${TIMESTAMP}"
-        BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz*"
+        BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
     else
         BACKUP_NAME="claude-code-dock-backup-${TIMESTAMP}"
-        BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz*"
+        BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
     fi
 }
 
@@ -256,42 +248,6 @@ create_backup_archive() {
     ok "Backup created: ${BOLD}${BACKUP_FILE}${RESET} (${BACKUP_SIZE})"
 }
 
-# BACKUP_ENCRYPT_PASSPHRASE isn't sourced from .env like other settings here
-# (backup.sh never does a full `source .env`, only targeted greps) — read it
-# the same targeted way so cron-driven, non-interactive encryption works
-# without requiring the caller to export it into the shell first.
-encrypt_backup() {
-    if [ "${ENCRYPT}" != "true" ]; then
-        return
-    fi
-
-    if ! command -v gpg &>/dev/null; then
-        fail "--encrypt requires gpg on this host (not the container). Install it, e.g. 'apt install gnupg', and try again. Plaintext archive kept at: ${BACKUP_FILE}"
-    fi
-
-    if [ -z "${BACKUP_ENCRYPT_PASSPHRASE:-}" ] && [ -f "${ENV_FILE}" ]; then
-        BACKUP_ENCRYPT_PASSPHRASE=$(grep "^BACKUP_ENCRYPT_PASSPHRASE=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
-    fi
-
-    step "Encrypting backup with GPG (AES256, symmetric)..."
-
-    if [ -n "${BACKUP_ENCRYPT_PASSPHRASE:-}" ]; then
-        if ! gpg --symmetric --cipher-algo AES256 --batch --yes --pinentry-mode loopback \
-                --passphrase "${BACKUP_ENCRYPT_PASSPHRASE}" -o "${BACKUP_FILE}.gpg" "${BACKUP_FILE}"; then
-            fail "GPG encryption failed. Plaintext archive kept at: ${BACKUP_FILE}"
-        fi
-    else
-        if ! gpg --symmetric --cipher-algo AES256 --yes -o "${BACKUP_FILE}.gpg" "${BACKUP_FILE}"; then
-            fail "GPG encryption failed. Plaintext archive kept at: ${BACKUP_FILE}"
-        fi
-    fi
-
-    rm -f "${BACKUP_FILE}"
-    BACKUP_FILE="${BACKUP_FILE}.gpg"
-    BACKUP_SIZE=$(du -sh "${BACKUP_FILE}" 2>/dev/null | cut -f1 || echo "unknown")
-    ok "Backup encrypted: ${BOLD}${BACKUP_FILE}${RESET} (${BACKUP_SIZE}) — plaintext archive removed"
-}
-
 manage_old_backups() {
     step "Checking existing backups..."
 
@@ -325,21 +281,14 @@ print_result() {
     log ""
     log "  File: ${BOLD}${BACKUP_FILE}${RESET}"
     log ""
-    if [ "${BACKUP_HAS_CONFIG}" == "true" ] && [ "${ENCRYPT}" != "true" ]; then
+    if [ "${BACKUP_HAS_CONFIG}" == "true" ]; then
         log "  ${YELLOW}${BOLD}Note:${RESET} ${YELLOW}this archive includes your Claude Code session credentials"
         log "  (${CONFIG_DIR}), stored in plaintext inside the .tar.gz. Anyone who"
-        log "  gets a copy of this file can use them. Store it somewhere access-controlled,"
-        log "  or re-run with ${BOLD}--encrypt${RESET} to get a GPG-encrypted archive instead.${RESET}"
+        log "  gets a copy of this file can use them. Store it somewhere access-controlled.${RESET}"
         log ""
     fi
-    if [[ "${BACKUP_FILE}" == *.gpg ]]; then
-        log "  To restore:"
-        log "  ${BOLD}gpg --decrypt ${BACKUP_FILE} > $(basename "${BACKUP_FILE}" .gpg)${RESET}"
-        log "  ${BOLD}./scripts/restore.sh $(basename "${BACKUP_FILE}" .gpg)${RESET}"
-    else
-        log "  To restore:"
-        log "  ${BOLD}./scripts/restore.sh ${BACKUP_FILE}${RESET}"
-    fi
+    log "  To restore:"
+    log "  ${BOLD}./scripts/restore.sh ${BACKUP_FILE}${RESET}"
     log ""
 }
 
@@ -350,7 +299,6 @@ main() {
     check_config
     backup_env
     create_backup_archive
-    encrypt_backup
     manage_old_backups
     print_result
 }

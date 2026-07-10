@@ -43,7 +43,6 @@ BATS_FILES=(
   "$SCRIPT_DIR/entrypoint_github_token.bats"
   "$SCRIPT_DIR/entrypoint_puid_pgid.bats"
   "$SCRIPT_DIR/backup_retention.bats"
-  "$SCRIPT_DIR/backup_encrypt.bats"
   "$SCRIPT_DIR/backup_restore.bats"
   "$SCRIPT_DIR/healthcheck.bats"
   "$SCRIPT_DIR/status_update_check.bats"

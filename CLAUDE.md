@@ -80,8 +80,6 @@ Not just running the project — modifying claude-code-dock itself and needs the
 | Build from local clone instead of pulling | `CLAUDE_SOURCE_PATH` | Not validated by the container itself; `install.sh`/`update.sh`/`session-up.sh` generate `docker-compose.override.yml` to enforce it — a manual `docker compose up -d` run from the same directory picks that up too, once one of the scripts has generated it at least once |
 | Pin the pulled image tag | `CLAUDE_DOCK_TAG` | Silent no-op when unset (falls back to `:latest`); ignored entirely if `CLAUDE_SOURCE_PATH` is set |
 | Backup retention beyond the last 10 | `BACKUP_RETENTION` | Silent no-op when unset (defaults to 10) |
-| Encrypted backups, non-interactive | `BACKUP_ENCRYPT_PASSPHRASE` (with `backup.sh --encrypt`) | Silent no-op when unset — `gpg` just prompts interactively instead |
-| Scheduled daily backups | `install.sh --with-backup-cron` (flag, not an env var) | Opt-in host crontab entry; auto-adds `--encrypt` only if `BACKUP_ENCRYPT_PASSPHRASE` is already set in `.env` |
 | CPU/memory resource limits | `docker-compose.resources.yml` (opt-in overlay, not an env var) | Not applied unless explicitly layered with `-f`; `install.sh` only warns when `CLAUDE_AUTO_APPROVE=true` and it's absent |
 | Watchdog restart notifications | `WATCHDOG_NTFY_URL` (host-side only) | Silent no-op when unset or `curl` missing |
 
@@ -446,13 +444,6 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
   `scripts/watchdog.sh` every 5 minutes (`setup_watchdog_cron()`), idempotently —
   re-running it must never duplicate the cron line. Falls back to printing the line
   to schedule manually when `crontab` isn't available on this host.
-- `--with-backup-cron`: same mechanism as `--with-watchdog` (`setup_backup_cron()`),
-  a daily-at-03:00 host crontab entry running `scripts/backup.sh --quiet`, idempotent
-  the same way. Automatically appends `--encrypt` to the cron line when
-  `BACKUP_ENCRYPT_PASSPHRASE` is already set in `.env` (read via `check_env()`'s
-  earlier `source .env`) — without a passphrase, `gpg` would otherwise block a cron
-  job forever waiting on an interactive prompt with no terminal attached, so
-  `--encrypt` is deliberately NOT added when unset.
 
 **Must not:**
 - Modify system settings
@@ -497,11 +488,9 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 
 **`.env` masking (`backup_env()`):** two passes. First excludes any line whose *variable name* looks like a secret (`…TOKEN…`, `…KEY…`, `…SECRET…`, `…PASSWORD…`, `…PASSPHRASE…`, `…CREDENTIAL…`, `…AUTH…`, `…CERT…`). Second excludes any line whose *value* is a URL with credentials embedded (`user:pass@host` — e.g. someone setting `GIT_REPO_URL=https://user:ghp_xxx@github.com/...` instead of the recommended separate `GITHUB_TOKEN_FILE`), which the name-based pass alone would miss since `GIT_REPO_URL` doesn't look like a secret-named variable. This is a denylist, not an allowlist — best-effort, not a guarantee; a secret in an unrecognized variable name would slip through. Deliberately excludes `PAT`: it's a substring of `PATH`, and this project already has three load-bearing non-secret vars ending in exactly that suffix (`WORKSPACE_PATH`, `CONFIG_BASE_PATH`, `SHARED_CONFIG_PATH`) that adding it would silently strip from every backup.
 
-**Encryption (`--encrypt`):** Pipes the finished `.tar.gz` through `gpg --symmetric --cipher-algo AES256`, producing a `.tar.gz.gpg` and removing the plaintext archive. Passphrase source, in order: `BACKUP_ENCRYPT_PASSPHRASE` env var (e.g. set in `.env`, non-interactive — for cron use) or an interactive `gpg` prompt if unset. Requires `gpg` on the host (not the container) since backups are host-side files.
+**Unencrypted-credentials warning:** `print_result()` tracks whether the archive included `CONFIG_DIR` (`BACKUP_HAS_CONFIG`, set in `create_backup_archive()`) and, when it did, prints an explicit note that the `.tar.gz` contains plaintext Claude Code session credentials — the default (and only) path produces exactly that file, silently, so treat the archive as sensitive and store it somewhere access-controlled.
 
-**Unencrypted-credentials warning:** `print_result()` tracks whether the archive included `CONFIG_DIR` (`BACKUP_HAS_CONFIG`, set in `create_backup_archive()`) and, when it did and `--encrypt` wasn't passed, prints an explicit note that the `.tar.gz` contains plaintext Claude Code session credentials — since the default (no flag) path produces exactly that file, silently.
-
-**Scheduling:** this script never schedules itself — it only runs when invoked manually or by whatever calls it. `scripts/install.sh --with-backup-cron` is the supported way to run it automatically (a daily host crontab entry); see that script's section above. Not wiring this up at all is a real gap for a project whose primary asset (Claude Code session credentials) lives nowhere else — treat losing the config volume with no backup as the actual failure mode `--with-backup-cron` exists to prevent, not `scripts/watchdog.sh`'s wedged-pane scenario, which is merely inconvenient by comparison.
+**Scheduling:** this script never schedules itself — it only runs when invoked manually or by whatever calls it (e.g. a host crontab entry you set up yourself). Not wiring this up at all is a real gap for a project whose primary asset (Claude Code session credentials) lives nowhere else — losing the config volume with no backup is unrecoverable, unlike `scripts/watchdog.sh`'s wedged-pane scenario, which is merely inconvenient by comparison.
 
 ---
 
@@ -741,7 +730,6 @@ Architecture above), no host-level privilege needed at all.
 - [x] Dockerfile `HEALTHCHECK` + `scripts/watchdog.sh` for external monitoring/auto-restart on `unhealthy`
 - [x] `scripts/status.sh` — environment state overview
 - [x] Community Applications template for Unraid (XML) — `unraid/claude-code-dock.xml`, not yet submitted upstream (see `docs/unraid.md#community-applications-template`)
-- [x] GPG encryption support for backups (`scripts/backup.sh --encrypt`)
 - [x] Configurable `PUID`/`PGID` (root step-down via `setpriv`, no more fixed UID 1000)
 - [x] Optional watchdog notification hook (`WATCHDOG_NTFY_URL`)
 - [x] Opt-in `:stable` image tag, promoted manually, independent of the weekly `:latest` rebuild
@@ -749,7 +737,6 @@ Architecture above), no host-level privilege needed at all.
 - [x] `scripts/install.sh --with-watchdog`: one-flag host crontab setup for `scripts/watchdog.sh`, idempotent
 - [x] `CLAUDE_AUTO_APPROVE=true` without resource limits now requires explicit confirmation in `install.sh`, and is logged as a warning by `entrypoint.sh` on every start regardless of how the container was brought up
 - [x] `scripts/backup.sh` warns explicitly when an unencrypted archive contains plaintext credentials
-- [x] `scripts/install.sh --with-backup-cron`: one-flag daily host crontab setup for `scripts/backup.sh`, idempotent, auto-encrypting when `BACKUP_ENCRYPT_PASSPHRASE` is already configured
 - [x] `docker-compose.resources.yml`: opt-in CPU/memory limit overlay (explicit `-f`, never auto-loaded), replacing the commented-out `deploy:` block that used to live in `docker-compose.yml` itself
 - [x] `SHARED_CONFIG_PATH` mount now falls back to `/dev/null` (like `GITHUB_TOKEN_FILE`) instead of a real host directory when unset — no more unexplained `./shared-config/` created for a feature nobody opted into
 - [x] `/etc/claude-dock-packages.list`: `dpkg -l` snapshot baked into the image, so an unpinned `apt-get upgrade` build is bisectable after the fact
