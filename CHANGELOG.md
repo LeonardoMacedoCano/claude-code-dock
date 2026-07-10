@@ -9,6 +9,18 @@ here are dated rather than numbered. Check this file before running
 ## Unreleased
 
 ### Added
+- `scripts/watchdog.sh` now auto-discovers every `claude-code-dock*`
+  container on the host (same filter `scripts/sessions.sh` uses) when run
+  with no container name and no `CONTAINER_NAME` already set in its process
+  environment — one `./scripts/install.sh --with-watchdog` crontab entry now
+  covers every session from `new-session.sh`/`session-up.sh`, including ones
+  created after the entry was installed, instead of only the first session.
+  `CONTAINER_NAME` sourced from `.env` no longer silently pins single-container
+  mode (it's captured before `.env` is read), since `.env` almost always
+  defines it for `docker compose`'s own purposes and would otherwise defeat
+  auto-discovery for exactly the multi-session hosts it's meant to help.
+  Explicit single-container use (`watchdog.sh <name>`, or `CONTAINER_NAME=foo`
+  already set before the script starts) is unchanged.
 - `docker/entrypoint.sh` / `docker/claude-remote-launch.sh` now log how long
   each startup step took, a one-line summary (mode, container name, session),
   and — persisted to `~/.claude/logs/dock.log`, which survives `tmux` taking

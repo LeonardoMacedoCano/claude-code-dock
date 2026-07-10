@@ -571,7 +571,7 @@ Set `AUTO_START_MODE=remote` in `.env`.
 1. Reads `Health.Status` via `docker inspect --format '{{.State.Health.Status}}' <container>`.
 2. If `unhealthy`, first checks `docker exec <container> test -f /tmp/claude-dock-fatal` — if that marker is present, `entrypoint.sh`'s `fatal()` is what parked PID 1, meaning this is a persistent misconfiguration (invalid `AUTO_START_MODE`, unwritable config/workspace dir), not a wedged process. A restart can't fix it, so the script warns and skips instead (exit 0 either way) — restarting anyway would just recreate the loop `fatal()` exists to avoid. Otherwise it runs `docker restart <container>` and logs it.
 3. Any other status (`healthy`, `starting`, or no healthcheck configured) is a no-op.
-4. Takes the container name as `$1`, defaulting to `${CONTAINER_NAME:-claude-code-dock}` from `.env` like the other scripts.
+4. Target selection, in priority order: (a) `$1` if given — checks just that one container; (b) a `CONTAINER_NAME` already present in the *process* environment before the script starts (e.g. a crontab line prefixed `CONTAINER_NAME=foo ...`) — same, single-container; (c) otherwise, **auto-discovery**: runs `docker ps -a --filter "name=claude-code-dock" --format "{{.Names}}"` (the same filter `scripts/sessions.sh` uses to list them) and checks every matching container in turn. This is what lets one crontab entry keep covering every session created later via `new-session.sh`/`session-up.sh`, with nothing to edit when a new one is added. `CONTAINER_NAME` sourced from `.env` does **not** count as "pin one" for this decision (captured before `.env` is sourced) — `.env` almost always defines it for `docker compose`'s own purposes, and letting that count would silently defeat auto-discovery for the exact multi-session case it exists for.
 
 **Notifications (`notify()`, optional):** if `$WATCHDOG_NTFY_URL` is set (host-side env var or `.env`, never passed into the container), a plain-text `curl -d` POST is sent when the script actually restarts the container, when a restart fails, or when it skips due to the fatal marker. Works as-is with an ntfy.sh topic URL or any webhook accepting a raw POST body. Deliberately silent (no notification) on `healthy`/`starting`/no-healthcheck — those are the expected steady state on every cron tick, and notifying on those would just be noise at cron frequency. Never fails the watchdog run itself: a missing `curl` or an unreachable/erroring URL is swallowed (`|| true`) — a notification failing is not a reason to skip or fail the actual restart logic.
 
@@ -581,7 +581,7 @@ Set `AUTO_START_MODE=remote` in `.env`.
 - Restart an `unhealthy` container that has the `/tmp/claude-dock-fatal` marker — see behavior #2 above
 - Let a notification failure (missing `curl`, unreachable URL) affect the script's own exit code or skip the restart/skip logic
 
-**Scheduling** (this script alone doesn't self-schedule): `./scripts/install.sh --with-watchdog` adds a host crontab entry, every 5 minutes — no extra container, no elevated Docker access beyond what running `docker` commands already implies.
+**Scheduling** (this script alone doesn't self-schedule): `./scripts/install.sh --with-watchdog` adds a host crontab entry, every 5 minutes — no extra container, no elevated Docker access beyond what running `docker` commands already implies. The generated line deliberately omits `CONTAINER_NAME=`, so it relies on auto-discovery (behavior #4 above) and needs adding only once per host, not once per session.
 
 ---
 

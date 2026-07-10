@@ -6,6 +6,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 ENV_FILE="${PROJECT_DIR}/.env"
 
+# Captured BEFORE sourcing .env: .env almost always defines CONTAINER_NAME
+# (install.sh/new-session.sh both write it) for docker compose's own use,
+# which is not a signal that this run should only ever watch one container
+# -- if sourcing .env were allowed to populate this, auto-discovery below
+# would never trigger for anyone with a normal .env, defeating the one case
+# (multiple sessions) it exists for. Only a CONTAINER_NAME already present in
+# the process environment before this script even started (e.g. a crontab
+# line prefixed with `CONTAINER_NAME=foo ... watchdog.sh`) counts as "pin
+# this one".
+PRESET_CONTAINER_NAME="${CONTAINER_NAME:-}"
+
 if [ -f "${ENV_FILE}" ]; then
     set -a
     # shellcheck disable=SC1090
@@ -28,15 +39,22 @@ fail() { echo -e "${RED}[✗]${RESET} $1" >&2; exit 1; }
 usage() {
     echo "Usage: $0 [container-name]"
     echo ""
-    echo "  Restarts <container-name> (default: \$CONTAINER_NAME from .env, or"
-    echo "  claude-code-dock) if Docker reports its healthcheck as 'unhealthy'."
+    echo "  With a container name (or \$CONTAINER_NAME set): restarts just that"
+    echo "  container if Docker reports its healthcheck as 'unhealthy'."
+    echo ""
+    echo "  With NEITHER a name NOR \$CONTAINER_NAME set: auto-discovers every"
+    echo "  container whose name contains 'claude-code-dock' (same filter"
+    echo "  scripts/sessions.sh uses) and checks each one in turn. This is what"
+    echo "  lets a single crontab entry cover every session created via"
+    echo "  new-session.sh/session-up.sh, including ones created after the cron"
+    echo "  entry was installed -- nothing to edit when you add a session."
     echo ""
     echo "  Optional: set \$WATCHDOG_NTFY_URL to a webhook URL (e.g. an ntfy.sh"
-    echo "  topic) to get a notification when this script restarts the container,"
-    echo "  fails to restart it, or skips it due to a fatal misconfiguration marker."
-    echo "  Silently a no-op if unset, or if curl isn't installed."
+    echo "  topic) to get a notification when this script restarts a container,"
+    echo "  fails to restart one, or skips one due to a fatal misconfiguration"
+    echo "  marker. Silently a no-op if unset, or if curl isn't installed."
     echo ""
-    echo "  'restart: unless-stopped' in docker-compose.yml only reacts to the"
+    echo "  'restart: unless-stopped' in docker-compose.yml only reacts to a"
     echo "  container actually exiting -- a wedged tmux pane that Docker marks"
     echo "  unhealthy but that hasn't crashed is never auto-restarted on its own."
     echo "  This script closes that gap. Run it periodically from the HOST via"
@@ -51,18 +69,14 @@ usage() {
     echo "  same fatal() call every cycle, i.e. the exact restart loop fatal()"
     echo "  exists to avoid. Check 'docker logs <container>' for the fix instead."
     echo ""
-    echo "  Exit codes: 0 = healthy/starting/no-healthcheck (no action needed)"
-    echo "              0 = unhealthy, restart succeeded"
-    echo "              0 = unhealthy due to a fatal() misconfiguration, skipped"
-    echo "              1 = container not found, or restart failed"
+    echo "  Exit codes: 0 = every checked container healthy/starting/skipped/restarted OK"
+    echo "              1 = a container was not found, or a restart failed"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     usage
     exit 0
 fi
-
-CONTAINER_NAME="${1:-${CONTAINER_NAME:-claude-code-dock}}"
 
 # Optional, best-effort notification when this script actually takes (or
 # skips) action -- not on every healthy/starting no-op, which would just be
@@ -78,48 +92,116 @@ notify() {
     curl -fsS -m 10 -d "${message}" "${WATCHDOG_NTFY_URL}" &>/dev/null || true
 }
 
-STATUS=$(docker inspect --format '{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
+# Checks and, if needed, restarts a single container. Never calls exit --
+# returns a status instead, so both single-name mode and auto-discovery mode
+# below can decide what a failure means for the run as a whole (discovery
+# mode must keep checking the remaining containers even if one fails).
+#   0 = healthy/starting/no-healthcheck/restarted OK/skipped via fatal marker
+#   1 = restart failed
+#   2 = container not found
+check_one() {
+    local name="$1"
+    local status
+    status=$(docker inspect --format '{{.State.Health.Status}}' "${name}" 2>/dev/null || echo "")
 
-if [ -z "${STATUS}" ]; then
-    if ! docker inspect "${CONTAINER_NAME}" &>/dev/null; then
-        fail "Container not found: ${CONTAINER_NAME}"
+    if [ -z "${status}" ]; then
+        if ! docker inspect "${name}" &>/dev/null; then
+            echo -e "  ${RED}[✗]${RESET} Container not found: ${name}" >&2
+            return 2
+        fi
+        ok "${name}: no healthcheck configured or health status unavailable — nothing to do."
+        return 0
     fi
-    ok "${CONTAINER_NAME}: no healthcheck configured or health status unavailable — nothing to do."
+
+    case "${status}" in
+        unhealthy)
+            # entrypoint.sh's fatal() leaves this marker before parking PID 1 on
+            # `sleep infinity` -- that's a persistent misconfiguration (invalid
+            # AUTO_START_MODE, unwritable config/workspace dir), not a wedged
+            # process, and restarting won't fix it. Restarting anyway would just
+            # reproduce the same fatal() call next cycle, recreating the restart
+            # loop fatal() was specifically built to avoid.
+            if docker exec "${name}" test -f /tmp/claude-dock-fatal 2>/dev/null; then
+                warn "${name} is unhealthy due to a fatal startup misconfiguration, not a wedged process — restarting would not fix it."
+                echo -e "    Check: docker logs ${name}"
+                notify "claude-code-dock: ${name} is unhealthy due to a fatal startup misconfiguration — not restarted. Check: docker logs ${name}"
+                return 0
+            fi
+
+            warn "${name} is unhealthy — restarting..."
+            step "docker restart ${name}"
+            if docker restart "${name}" &>/dev/null; then
+                ok "${name} restarted."
+                notify "claude-code-dock: ${name} was unhealthy — restarted successfully."
+                return 0
+            fi
+
+            notify "claude-code-dock: ${name} is unhealthy and docker restart FAILED — needs manual attention."
+            echo -e "  ${RED}[✗]${RESET} docker restart failed for ${name}." >&2
+            return 1
+            ;;
+        healthy)
+            ok "${name}: healthy."
+            ;;
+        starting)
+            ok "${name}: starting (within HEALTHCHECK --start-period) — no action."
+            ;;
+        *)
+            ok "${name}: health status '${status}' — no action."
+            ;;
+    esac
+    return 0
+}
+
+run_single() {
+    local name="$1"
+    local rc=0
+    check_one "${name}" || rc=$?
+    case "${rc}" in
+        0) exit 0 ;;
+        2) fail "Container not found: ${name}" ;;
+        *) exit 1 ;;
+    esac
+}
+
+# No explicit name and no $CONTAINER_NAME: instead of guessing a single
+# default name, ask Docker for every container this project could have
+# created (same "name=claude-code-dock" substring filter scripts/sessions.sh
+# already uses to list them). This is what makes one crontab entry keep
+# covering every session from new-session.sh/session-up.sh automatically,
+# including ones that didn't exist yet when the entry was installed.
+run_discovery() {
+    local names
+    names="$(docker ps -a --filter "name=claude-code-dock" --format "{{.Names}}" 2>/dev/null || true)"
+
+    if [ -z "${names}" ]; then
+        warn "No claude-code-dock containers found on this host — nothing to watch."
+        exit 0
+    fi
+
+    step "Auto-discovered $(echo "${names}" | wc -l | tr -d ' ') claude-code-dock container(s): $(echo "${names}" | tr '\n' ' ')"
+    echo ""
+
+    local failures=0
+    local rc
+    while IFS= read -r name; do
+        [ -z "${name}" ] && continue
+        rc=0
+        check_one "${name}" || rc=$?
+        [ "${rc}" -ne 0 ] && failures=$((failures + 1))
+        echo ""
+    done <<< "${names}"
+
+    [ "${failures}" -gt 0 ] && exit 1
     exit 0
+}
+
+CONTAINER_ARG="${1:-}"
+
+if [ -n "${CONTAINER_ARG}" ]; then
+    run_single "${CONTAINER_ARG}"
+elif [ -n "${PRESET_CONTAINER_NAME}" ]; then
+    run_single "${PRESET_CONTAINER_NAME}"
+else
+    run_discovery
 fi
-
-case "${STATUS}" in
-    unhealthy)
-        # entrypoint.sh's fatal() leaves this marker before parking PID 1 on
-        # `sleep infinity` -- that's a persistent misconfiguration (invalid
-        # AUTO_START_MODE, unwritable config/workspace dir), not a wedged
-        # process, and restarting won't fix it. Restarting anyway would just
-        # reproduce the same fatal() call next cycle, recreating the restart
-        # loop fatal() was specifically built to avoid.
-        if docker exec "${CONTAINER_NAME}" test -f /tmp/claude-dock-fatal 2>/dev/null; then
-            warn "${CONTAINER_NAME} is unhealthy due to a fatal startup misconfiguration, not a wedged process — restarting would not fix it."
-            echo -e "    Check: docker logs ${CONTAINER_NAME}"
-            notify "claude-code-dock: ${CONTAINER_NAME} is unhealthy due to a fatal startup misconfiguration — not restarted. Check: docker logs ${CONTAINER_NAME}"
-            exit 0
-        fi
-
-        warn "${CONTAINER_NAME} is unhealthy — restarting..."
-        step "docker restart ${CONTAINER_NAME}"
-        if docker restart "${CONTAINER_NAME}" &>/dev/null; then
-            ok "${CONTAINER_NAME} restarted."
-            notify "claude-code-dock: ${CONTAINER_NAME} was unhealthy — restarted successfully."
-        else
-            notify "claude-code-dock: ${CONTAINER_NAME} is unhealthy and docker restart FAILED — needs manual attention."
-            fail "docker restart failed for ${CONTAINER_NAME}."
-        fi
-        ;;
-    healthy)
-        ok "${CONTAINER_NAME}: healthy."
-        ;;
-    starting)
-        ok "${CONTAINER_NAME}: starting (within HEALTHCHECK --start-period) — no action."
-        ;;
-    *)
-        ok "${CONTAINER_NAME}: health status '${STATUS}' — no action."
-        ;;
-esac

@@ -261,9 +261,13 @@ normally since `sleep` terminates on `SIGTERM` by default.
 ### Why does `container_name:` default to the flat literal `claude-code-dock`, not something derived from `REMOTE_SESSION_NAME`?
 
 Every host-side script (`status.sh`, `logs.sh`, `attach.sh`, `shell.sh`,
-`claude.sh`, `remote.sh`, `watchdog.sh`) resolves its target container name
-via its own flat `${CONTAINER_NAME:-claude-code-dock}` fallback, not
-Compose's interpolation. Changing only `docker-compose.yml`'s default
+`claude.sh`, `remote.sh`) resolves its target container name via its own
+flat `${CONTAINER_NAME:-claude-code-dock}` fallback, not Compose's
+interpolation. `watchdog.sh` is the one exception: with no explicit name, it
+auto-discovers every `claude-code-dock*` container instead of assuming a
+single one (see CLAUDE.md's `scripts/watchdog.sh` entry for the full
+behavior), since it's meant to keep watching every session on the host, not
+just one. Changing only `docker-compose.yml`'s default
 (Compose does support the nested `${VAR:-...${OTHER:-x}}` syntax that would
 be needed) would silently orphan every already-running container created
 under the old literal name and point the scripts at a name that doesn't

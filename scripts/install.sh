@@ -117,10 +117,16 @@ YAML
 # its own. --with-watchdog wires up a host crontab entry so this isn't a step
 # operators have to discover and configure by hand after the fact.
 #
+# Deliberately does NOT pin CONTAINER_NAME on the cron line: with no name and
+# no CONTAINER_NAME in its environment, watchdog.sh auto-discovers every
+# claude-code-dock* container on this host (same filter sessions.sh uses) and
+# checks each one. That's what lets this single cron entry keep covering
+# every session created later via new-session.sh/session-up.sh too, with
+# nothing to edit when a new one is added.
+#
 # Idempotent by design: re-running install.sh --with-watchdog (e.g. after
 # ./scripts/update.sh) must not pile up duplicate cron lines, so any existing
-# line invoking this session's watchdog.sh is left untouched instead of
-# appended again.
+# line invoking watchdog.sh is left untouched instead of appended again.
 setup_watchdog_cron() {
     if [ "${WITH_WATCHDOG}" != "true" ]; then
         return
@@ -135,7 +141,7 @@ setup_watchdog_cron() {
         return
     fi
 
-    local cron_line="*/5 * * * * CONTAINER_NAME=${CONTAINER_NAME} ${SCRIPT_DIR}/watchdog.sh >> ${PROJECT_DIR}/watchdog.log 2>&1"
+    local cron_line="*/5 * * * * ${SCRIPT_DIR}/watchdog.sh >> ${PROJECT_DIR}/watchdog.log 2>&1"
     local existing
     existing="$(crontab -l 2>/dev/null || true)"
 

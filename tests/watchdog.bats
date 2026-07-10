@@ -150,3 +150,76 @@ CURLEOF
   [ ! -f "$TEST_TMPDIR/curl_calls" ]
   unset WATCHDOG_NTFY_URL
 }
+
+_mock_docker_multi() {
+  cat > "$MOCK_BIN/docker" << 'DOCKEREOF'
+#!/bin/bash
+ARGS="$*"
+case "$ARGS" in
+  *"ps -a --filter name=claude-code-dock --format {{.Names}}"*)
+    printf 'claude-code-dock-a\nclaude-code-dock-b\n'; exit 0 ;;
+  *"inspect --format {{.State.Health.Status}} claude-code-dock-a"*) echo "healthy"; exit 0 ;;
+  *"inspect --format {{.State.Health.Status}} claude-code-dock-b"*) echo "unhealthy"; exit 0 ;;
+  *"inspect claude-code-dock-a"*) exit 0 ;;
+  *"inspect claude-code-dock-b"*) exit 0 ;;
+  *"exec claude-code-dock-b test -f /tmp/claude-dock-fatal"*) exit 1 ;;
+  *"restart claude-code-dock-b"*) echo "restarted claude-code-dock-b"; exit 0 ;;
+esac
+exit 1
+DOCKEREOF
+  chmod +x "$MOCK_BIN/docker"
+}
+
+@test "no name and no CONTAINER_NAME: auto-discovers and checks every claude-code-dock container" {
+  _mock_docker_multi
+  run env -u CONTAINER_NAME bash "$WATCHDOG_SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Auto-discovered 2 claude-code-dock container(s)"* ]]
+  [[ "$output" == *"claude-code-dock-a: healthy"* ]]
+  [[ "$output" == *"claude-code-dock-b is unhealthy"* ]]
+  [[ "$output" == *"claude-code-dock-b restarted"* ]]
+}
+
+@test "auto-discovery: a restart failure for one container still reports non-zero" {
+  cat > "$MOCK_BIN/docker" << 'DOCKEREOF'
+#!/bin/bash
+ARGS="$*"
+case "$ARGS" in
+  *"ps -a --filter name=claude-code-dock --format {{.Names}}"*)
+    printf 'claude-code-dock-a\n'; exit 0 ;;
+  *"inspect --format {{.State.Health.Status}} claude-code-dock-a"*) echo "unhealthy"; exit 0 ;;
+  *"inspect claude-code-dock-a"*) exit 0 ;;
+  *"exec claude-code-dock-a test -f /tmp/claude-dock-fatal"*) exit 1 ;;
+  *"restart claude-code-dock-a"*) exit 1 ;;
+esac
+exit 1
+DOCKEREOF
+  chmod +x "$MOCK_BIN/docker"
+
+  run env -u CONTAINER_NAME bash "$WATCHDOG_SCRIPT"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"docker restart failed for claude-code-dock-a"* ]]
+}
+
+@test "auto-discovery: no claude-code-dock containers found is a no-op, not an error" {
+  cat > "$MOCK_BIN/docker" << 'DOCKEREOF'
+#!/bin/bash
+ARGS="$*"
+case "$ARGS" in
+  *"ps -a --filter name=claude-code-dock --format {{.Names}}"*) printf ''; exit 0 ;;
+esac
+exit 1
+DOCKEREOF
+  chmod +x "$MOCK_BIN/docker"
+
+  run env -u CONTAINER_NAME bash "$WATCHDOG_SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"No claude-code-dock containers found"* ]]
+}
+
+@test "a CONTAINER_NAME already set before the script starts still pins single-container mode" {
+  _mock_docker "healthy"
+  run env CONTAINER_NAME=fake-container bash "$WATCHDOG_SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"fake-container: healthy"* ]]
+}

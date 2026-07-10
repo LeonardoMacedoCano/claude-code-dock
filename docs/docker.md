@@ -250,6 +250,12 @@ and talks to the Docker daemon the same way any other host-side `docker`
 command does, so it needs no more host privilege than you already have by
 being able to run `docker` commands at all.
 
+Running several sessions (`new-session.sh`/`session-up.sh`)? You still only
+need this **once** — with no container name given, `watchdog.sh`
+auto-discovers every `claude-code-dock*` container on the host and checks
+each one, including sessions created after the cron entry was installed. No
+per-session cron line to add or remember.
+
 If `crontab` isn't available on this host (some minimal NAS OSes don't
 expose one over SSH), `install.sh --with-watchdog` says so and prints the
 line to schedule with whatever mechanism the platform does offer.

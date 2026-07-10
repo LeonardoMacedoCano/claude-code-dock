@@ -207,6 +207,10 @@ docker restart claude-code-dock
 */5 * * * * /path/to/claude-code-dock/scripts/watchdog.sh >> /path/to/claude-code-dock/watchdog.log 2>&1
 ```
 
+With no container name given (as above), it auto-discovers and checks every
+`claude-code-dock*` container on the host — one entry covers every session
+from `new-session.sh`/`session-up.sh`, including ones created later. `./scripts/install.sh --with-watchdog` sets up this exact line for you.
+
 ---
 
 ## Connection Problems
