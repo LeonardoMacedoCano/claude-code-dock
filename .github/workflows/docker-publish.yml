@@ -36,10 +36,8 @@ jobs:
       # tests/*.bats mocks entrypoint.sh's shell logic directly, and
       # tests/smoke.sh (below) boots the image via a raw `docker run`, not
       # `docker compose`. This is the only check that would catch a broken
-      # interpolation, a YAML typo, or an invalid `depends_on`/`condition`
-      # value (e.g. claude-code-dock-init's service_completed_successfully)
-      # before it reaches an operator's `docker compose up`. Runs with zero
-      # .env present on purpose -- every variable in these files already has
+      # interpolation or a YAML typo before it reaches an operator's
+      # `docker compose up`. Runs with zero .env present on purpose -- every variable in these files already has
       # a `${VAR:-default}` fallback, so this is exactly what a fresh clone
       # sees before anyone has configured anything.
       - name: Validate docker-compose.yml (and the opt-in overlays) parse and resolve

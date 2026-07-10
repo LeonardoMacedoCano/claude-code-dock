@@ -47,14 +47,12 @@ docker logs claude-code-dock
 
 **A) Permission error on the config volume:**
 
-`docker-compose.yml`'s `claude-code-dock-init` service already does this
-`chown` automatically, once, before the main container starts on every
-`docker compose up` — including a bare one run by Unraid's Compose Manager
-plugin or anything else that isn't `install.sh`/`new-session.sh`. So this
-should only still happen if that init container itself couldn't chown the
-path (check its logs: `docker logs <container_name>-init`) — typically a
-filesystem that refuses `chown` to an arbitrary UID (NFS with root-squash,
-some rootless Docker setups). In that case, fix it manually the same way:
+`install.sh`/`new-session.sh` chown the config directory to `PUID`/`PGID` on
+the host up front, but a bare `docker compose up -d` run by something else
+(Unraid's Compose Manager plugin, or any tool that isn't this project's own
+scripts) skips that step — Docker then auto-creates the missing bind-mount
+source directory as `root:root` the instant the container starts, which is
+not writable by the `node` user inside.
 
 The entrypoint validates this on every start and fails with a boxed,
 explicit message instead of a bare `EACCES` — look for `✗ FATAL: Config

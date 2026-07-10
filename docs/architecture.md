@@ -130,12 +130,6 @@ docker compose up -d
 Docker Engine reads docker-compose.yml
         |
         v
-claude-code-dock-init runs first (depends_on: service_completed_successfully):
-  mkdir -p + chown -R $PUID:$PGID on
-  $WORKSPACE_PATH and $CONFIG_BASE_PATH/$REMOTE_SESSION_NAME on the host,
-  before Docker's own bind-mount auto-create can leave either root-owned
-        |
-        v
 Docker mounts volumes for the main service:
   $CONFIG_BASE_PATH/$REMOTE_SESSION_NAME -> /home/node/.claude
   $WORKSPACE_PATH                        -> /workspace

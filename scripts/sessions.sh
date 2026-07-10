@@ -15,15 +15,7 @@ echo -e "${CYAN}${BOLD}║            claude-code-dock — Sessions             
 echo -e "${CYAN}${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
 echo ""
 
-# Excludes the one-shot claude-code-dock-init permission-fixer containers
-# (docker-compose.yml) -- the name filter below matches them too (it's a
-# substring match), and without this they'd show up as fake "sessions"
-# permanently sitting in Exited state, which isn't what they are. The `|| true`
-# around grep matters: with zero matches (the common "no sessions yet" case),
-# `grep -v` exits 1, and under this script's `set -o pipefail` that would
-# otherwise abort the whole script right here instead of falling through to
-# the empty-list message below.
-CONTAINERS=$(docker ps -a --filter "name=claude-code-dock" --format "{{.Names}}" 2>/dev/null | { grep -v -- '-init$' || true; } | sort)
+CONTAINERS=$(docker ps -a --filter "name=claude-code-dock" --format "{{.Names}}" 2>/dev/null | sort)
 
 if [ -z "${CONTAINERS}" ]; then
     echo -e "  ${YELLOW}No claude-code-dock containers found.${RESET}"
@@ -65,7 +57,7 @@ while IFS= read -r name; do
 done <<< "${CONTAINERS}"
 
 TOTAL=$(echo "${CONTAINERS}" | wc -l | tr -d ' ')
-RUNNING=$(docker ps --filter "name=claude-code-dock" --format "{{.Names}}" 2>/dev/null | { grep -v -- '-init$' || true; } | wc -l | tr -d ' ')
+RUNNING=$(docker ps --filter "name=claude-code-dock" --format "{{.Names}}" 2>/dev/null | wc -l | tr -d ' ')
 
 echo ""
 echo -e "  ${BOLD}${RUNNING}/${TOTAL}${RESET} container(s) running"

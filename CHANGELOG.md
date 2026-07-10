@@ -12,18 +12,8 @@ here are dated rather than numbered. Check this file before running
 - `scripts/doctor.sh` — read-only preflight command. Flags `CLAUDE_SOURCE_PATH`
   accidentally equal to `WORKSPACE_PATH`/`CONFIG_BASE_PATH`, host directories
   owned by the wrong UID/GID, a stale or missing `docker-compose.override.yml`,
-  a running container whose baked-in config has drifted from the
-  currently-loaded `.env`, and whether this checkout's `docker-compose.yml`
-  is new enough to have the `claude-code-dock-init` fix below. Changes
-  nothing — safe to run any time.
-- `claude-code-dock-init`: a one-shot container in `docker-compose.yml` that
-  `chown`s `WORKSPACE_PATH` and `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` to
-  `PUID`:`PGID` before the main container starts. Fixes the most common
-  first-run failure — a brand-new session directory Docker itself
-  auto-creates as `root` the instant a bind-mount source path doesn't exist
-  yet — regardless of whether the container is brought up via
-  `install.sh`/`session-up.sh` or a bare `docker compose up -d` (e.g.
-  Unraid's Compose Manager plugin).
+  and a running container whose baked-in config has drifted from the
+  currently-loaded `.env`. Changes nothing — safe to run any time.
 - `docker/entrypoint.sh` / `docker/claude-remote-launch.sh` now log how long
   each startup step took, a one-line summary (mode, container name, session),
   and — persisted to `~/.claude/logs/dock.log`, which survives `tmux` taking
@@ -35,9 +25,8 @@ here are dated rather than numbered. Check this file before running
   parse and resolve correctly — nothing previously exercised the compose file
   itself.
 - CI (`tests/smoke.sh`): now also boots a container via a real
-  `docker compose up` (not just `docker run`), asserting
-  `claude-code-dock-init` exits `0` and the main service reaches `healthy`
-  through the actual `depends_on`/`service_completed_successfully` chain.
+  `docker compose up` (not just `docker run`), asserting the main service
+  reaches `healthy`.
 - CI (`tests/smoke.sh`): an end-to-end disaster-recovery drill — runs the
   real `scripts/backup.sh` and `scripts/restore.sh` against fake credentials,
   wipes the config directory, restores it, boots a container against the
@@ -54,9 +43,6 @@ here are dated rather than numbered. Check this file before running
   zoneinfo database it depends on wasn't installed.
 
 ### Fixed
-- `scripts/sessions.sh` no longer lists the new `claude-code-dock-init`
-  containers as if they were sessions (they'd otherwise show up as
-  permanently "Exited").
 - `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE=true`
   safety confirmation `scripts/install.sh` already had — previously, every
   session started via `new-session.sh` + `session-up.sh` skipped it

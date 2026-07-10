@@ -1,50 +1,6 @@
 services:
-  # Runs once, before the main container, to make sure WORKSPACE_PATH and
-  # CONFIG_BASE_PATH/REMOTE_SESSION_NAME are owned by PUID:PGID on the host
-  # *before* Docker ever gets a chance to auto-create either as root -- which
-  # is exactly what happens whenever a bind-mount source path doesn't exist
-  # yet (e.g. the first time a new REMOTE_SESSION_NAME is started), and is
-  # the #1 cause of entrypoint.sh's "Config directory is not writable"
-  # fatal(). Deliberately a separate, minimal image rather than logic added
-  # to entrypoint.sh's own root step-down block -- that block is restricted
-  # to touching only $HOME, never a bind mount (see CLAUDE.md#architecture);
-  # this container is the sanctioned place for that chown instead, scoped to
-  # exactly the two paths this same stack already mounts, nothing else on
-  # the host. Best-effort by design (`|| echo ... warning`, never a non-zero
-  # exit) -- on a filesystem where chown to an arbitrary UID isn't possible
-  # (NFS with root-squash, some rootless setups) this still exits 0 so the
-  # main container starts anyway and produces its own actionable fatal()
-  # message, exactly like before this existed. See CLAUDE.md#docker-composeyml
-  # and docs/security.md for the bounded root usage this introduces.
-  claude-code-dock-init:
-    image: alpine:3
-    container_name: ${CONTAINER_NAME:-claude-code-dock}-init
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-    volumes:
-      - ${WORKSPACE_PATH:-./workspaces}:/mnt/workspace
-      - ${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}:/mnt/config
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >
-        mkdir -p /mnt/workspace /mnt/config &&
-        chown -R "$$PUID:$$PGID" /mnt/workspace /mnt/config &&
-        echo "[claude-code-dock-init] /mnt/workspace and /mnt/config owned by $$PUID:$$PGID" ||
-        echo "[claude-code-dock-init] WARNING: could not chown one or both paths to $$PUID:$$PGID (best effort) -- the main container will report a clearer error if this is fatal." >&2
-    restart: "no"
-
   claude-code-dock:
     container_name: ${CONTAINER_NAME:-claude-code-dock}
-    # Waits for claude-code-dock-init to finish (success or not -- that
-    # service always exits 0, see its own comment above) before starting, so
-    # the ownership fix above has already run at least once by the time
-    # entrypoint.sh's own validate_config() checks writability. Requires
-    # Docker Compose v2.1+ (service_completed_successfully); any Compose
-    # version current enough to run this project already satisfies that.
-    depends_on:
-      claude-code-dock-init:
-        condition: service_completed_successfully
     # image: pull path (fast, default). build: fallback path (CLAUDE_SOURCE_PATH
     # local dev, or explicit `docker compose build`). Both intentional — see
     # CLAUDE.md#docker-composeyml for the full rationale, including the

@@ -157,12 +157,12 @@ GIT_USER_EMAIL=your@email.com
 > `chown` instruction printed to `docker logs` instead of looping silently —
 > see [troubleshooting.md](troubleshooting.md#container-restart-loop).
 >
-> This specific manual `chown` is only needed for a one-time migration like
-> the one above. For every new `REMOTE_SESSION_NAME` you create from here
-> on — including via the Compose Manager plugin's own "Compose Up", not just
-> `./scripts/new-session.sh` — `docker-compose.yml`'s `claude-code-dock-init`
-> service chowns that session's config directory automatically before the
-> main container starts, so this shouldn't come up again.
+> For every new `REMOTE_SESSION_NAME` you create from here on, run
+> `./scripts/new-session.sh` (or `install.sh`) rather than starting it
+> straight from the Compose Manager plugin's own "Compose Up" — those
+> scripts chown the session's config directory on the host before Docker
+> ever gets a chance to auto-create it as root, so this shouldn't come up
+> again.
 
 ### 1.5 — Create the workspace directory
 

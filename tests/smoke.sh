@@ -140,13 +140,10 @@ test_mode() {
 # Exercises the actual, real 'docker compose up' path -- every other check in
 # this suite either mocks docker entirely (tests/*.bats) or boots the image
 # via a raw 'docker run' (test_mode above), so nothing has ever verified that
-# docker-compose.yml itself resolves correctly, or that the
-# claude-code-dock-init -> claude-code-dock depends_on/
-# service_completed_successfully chain actually behaves as designed end to
-# end. Points the main service at the image already built above via a
-# throwaway override (pull_policy: never, so it can never reach out to GHCR)
-# instead of pulling/rebuilding -- claude-code-dock-init keeps its own
-# unmodified alpine:3.
+# docker-compose.yml itself resolves and boots correctly end to end. Points
+# the main service at the image already built above via a throwaway override
+# (pull_policy: never, so it can never reach out to GHCR) instead of
+# pulling/rebuilding.
 test_compose_up() {
     local cdir="${WORK_DIR}/compose"
     local envfile="${cdir}/.env"
@@ -154,7 +151,7 @@ test_compose_up() {
     local name="claude-code-dock-smoke-compose-${RUN_ID}"
     local project="smoke-compose-${RUN_ID}"
 
-    log "Testing 'docker compose up' (claude-code-dock-init depends_on chain)..."
+    log "Testing 'docker compose up'..."
 
     mkdir -p "${cdir}/workspace" "${cdir}/config"
     chmod 0777 "${cdir}/workspace" "${cdir}/config"
@@ -186,15 +183,6 @@ YAML
     COMPOSE_PROJECT="${project}"
     COMPOSE_OVERRIDE_FILE="${override}"
 
-    local init_exit
-    init_exit="$(docker inspect --format '{{.State.ExitCode}}' "${name}-init" 2>/dev/null || echo "?")"
-    if [ "${init_exit}" != "0" ]; then
-        err "FAILED: claude-code-dock-init exited with code ${init_exit}, expected 0"
-        docker logs "${name}-init" 2>&1 >&2 || true
-        return 1
-    fi
-    ok "claude-code-dock-init exited 0."
-
     local deadline=$((SECONDS + HEALTHY_TIMEOUT))
     local status=""
     while [ $SECONDS -lt $deadline ]; do
@@ -210,7 +198,7 @@ YAML
         return 1
     fi
 
-    ok "docker compose up: init container exited cleanly, main service healthy."
+    ok "docker compose up: main service healthy."
     return 0
 }
 

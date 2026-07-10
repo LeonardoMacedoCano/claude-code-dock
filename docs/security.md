@@ -152,42 +152,6 @@ cron access; only reach for the sidecar as a last resort, and understand that
 enabling it changes this section's "no exposed ports / no host privilege"
 guarantee for that one additional container.
 
-### Known exception — the permission-fixing init container
-
-The other deliberate exception, also opt-out-free but bounded and always on:
-`docker-compose.yml` declares a `claude-code-dock-init` service (`alpine:3`)
-that runs once, as root (its default user — no `user:` override), before the
-main container starts. Its only job is `mkdir -p` + `chown -R "$PUID:$PGID"`
-on `WORKSPACE_PATH` and `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` — the same two
-host paths the main service already mounts, nothing else. This exists
-because Docker itself auto-creates a missing bind-mount source directory as
-`root:root` the instant a container starts, which is otherwise a guaranteed
-"Config directory is not writable" failure the very first time a new
-`REMOTE_SESSION_NAME` is started via a bare `docker compose up -d` (e.g.
-Unraid's Compose Manager plugin, or any tool that isn't this project's own
-`install.sh`/`new-session.sh`, which already did this chown from the host
-side directly).
-
-Why this is bounded, unlike a generic root-in-container concern:
-- It touches only the two paths this same Compose file already declares as
-  volumes for the main service — never an arbitrary host path, and never
-  more than `WORKSPACE_PATH`/`CONFIG_BASE_PATH/REMOTE_SESSION_NAME`.
-- It is best-effort: a `chown` failure (e.g. NFS with root-squash) is caught
-  and only logged, so this container always exits `0` — it can never hang
-  the stack or block the main container from starting.
-- It exits immediately after the `chown` — there is no long-running root
-  process, unlike the watchdog sidecar's `docker.sock` mount above, which
-  keeps a root-equivalent capability available for the container's entire
-  lifetime.
-- It runs entirely inside the two bind-mounted paths' own filesystem view —
-  it never mounts `/var/run/docker.sock` or anything else host-wide.
-
-If this host's filesystem genuinely cannot support being chowned this way
-(e.g. a network share with root-squash), the init container's warning is
-harmless and the main container still starts, falling through to
-`entrypoint.sh`'s own `fatal()` message with the same manual `chown` hint
-this init container tries to make unnecessary in the first place.
-
 ### Network isolation (optional)
 
 For greater isolation, restrict the container's network access:
@@ -360,5 +324,4 @@ trivy image claude-code-dock_claude-code-dock
 [ ] If CLAUDE_AUTO_APPROVE=true, the token behind GITHUB_TOKEN_FILE is scoped as narrowly as possible (fine-grained PAT, single repo) -- with auto-approve on, the agent itself (not just the host) can read ~/.git-credentials
 [ ] If CLAUDE_AUTO_APPROVE=true, resource limits are set (size docker-compose.resources.yml and run with `-f docker-compose.yml -f docker-compose.resources.yml`) -- with no per-command confirmation, nothing else caps how much CPU/memory a single command can consume
 [ ] docker-compose.watchdog.yml is NOT in use unless this host has no cron access -- it mounts /var/run/docker.sock (root-equivalent host access) into a sidecar container; prefer `./scripts/install.sh --with-watchdog` (host crontab, no socket exposure)
-[ ] claude-code-dock-init exited 0 after the last `docker compose up` (`docker inspect --format '{{.State.ExitCode}}' <container_name>-init`) -- an exited container with code 0 here is expected and healthy, not a crash; a non-zero exit or a warning in its logs means WORKSPACE_PATH/CONFIG_BASE_PATH could not be chowned and the main container may still fail with a writability fatal()
 ```

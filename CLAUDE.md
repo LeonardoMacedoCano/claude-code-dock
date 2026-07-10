@@ -245,11 +245,15 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
   `GITHUB_TOKEN_FILE` (falls back to `/dev/null` rather than a real host
   directory when unset) — see [`docker-compose.yml`](#docker-composeyml)
   below for why that matters.
-- **A one-shot `claude-code-dock-init` container runs before the main
-  service**, chowning `WORKSPACE_PATH` and `CONFIG_BASE_PATH/REMOTE_SESSION_NAME`
-  to `PUID`/`PGID` so a brand-new session's config directory is never left
-  `root`-owned by Docker's own bind-mount auto-create behavior. See
-  [`docker-compose.yml`](#docker-composeyml) below.
+- **`install.sh`/`new-session.sh` chown the host-side config/workspace
+  directories to `PUID`/`PGID` before the container ever starts.** A brand-new
+  `REMOTE_SESSION_NAME`'s config directory does not exist yet on first start;
+  if something other than these scripts brings the container up first (a bare
+  `docker compose up -d`, e.g. Unraid's Compose Manager plugin), Docker
+  auto-creates that missing bind-mount source directory as `root:root`, and
+  `entrypoint.sh`'s `validate_config()` correctly rejects it as unwritable —
+  `docker logs` shows the boxed `fatal()` message with the exact fix, a
+  one-time `chown -R <PUID>:<PGID> <path>` on the host.
 
 ---
 
@@ -362,7 +366,6 @@ must always end on that final `exec` — never a plain call, which would leave
 - `- ${SHARED_CONFIG_PATH:-/dev/null}:/home/node/.claude-shared:ro` in `volumes:`: the same optional-file-mount idiom as `GITHUB_TOKEN_FILE` above, not the naive `${SHARED_CONFIG_PATH:-./shared-config}` this line used before — that earlier form fell back to a *real* host directory, which Docker auto-creates (root-owned) even when the operator never configured `SHARED_CONFIG_PATH` at all, leaving an unexplained artifact on the host for a feature nobody opted into. `entrypoint.sh` only ever does `[ -f "$SHARED_DIR"/CLAUDE.md ]` / `[ -d "$SHARED_DIR"/commands ]` against this path, both of which simply evaluate false when the mount target is `/dev/null` instead of a real directory, so this degrades to the same silent no-op as leaving the feature unmounted entirely — same reasoning as [Usage Profiles](#usage-profiles)'s feature matrix above.
 - Resource limits (CPU/memory) are **not** in this file. They live in the opt-in `docker-compose.resources.yml` overlay (same non-auto-loaded layering pattern as `docker-compose.watchdog.yml` — explicit `-f`, never merged automatically) instead of a commented-out block here, for two reasons: (1) `docker-compose.override.yml` is already scripts-managed for `CLAUDE_SOURCE_PATH` (see `sync_override_file()` below) and would silently clobber anything else placed in it; (2) a hardcoded limit in this tracked file would be wrong for most hosts. See that file's own header comment and `scripts/install.sh`'s `check_auto_approve_safety()`, which warns when `CLAUDE_AUTO_APPROVE=true` and `docker-compose.resources.yml` isn't present on disk.
 - `- PUID=${PUID:-1000}` / `- PGID=${PGID:-1000}` in `environment:`: read by `entrypoint.sh`'s root step-down block to remap the `node` account before dropping privilege. No corresponding `user:` field is set on the service — the container must start as root (the image's default, see the `Dockerfile` section) for that remap to be possible at all.
-- `claude-code-dock-init` service + the main service's `depends_on: { claude-code-dock-init: { condition: service_completed_successfully } }`: a one-shot `alpine:3` container that runs `mkdir -p` + `chown -R "$PUID:$PGID"` on `WORKSPACE_PATH` and `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` before the main service starts. Exists specifically for the case a plain `docker compose up -d` (Unraid's Compose Manager plugin, or any other tool that isn't `install.sh`/`new-session.sh`) hits on the very first start of a new `REMOTE_SESSION_NAME`: Docker auto-creates a missing bind-mount source directory as `root:root` the instant the container starts, which `entrypoint.sh`'s `validate_config()` then correctly rejects as unwritable — the exact failure this init service pre-empts. Deliberately a *separate* image/container rather than logic in `entrypoint.sh`'s own root step-down block, which is restricted to touching only `$HOME`, never a bind mount (see [Architecture](#architecture)) — that restriction stays intact; this is a different, minimal, one-shot container instead, scoped to exactly the two paths this same stack already mounts. Always exits `0` (the `chown` failure branch just echoes a warning) so a filesystem that can't be chowned to an arbitrary UID (NFS root-squash, some rootless setups) never blocks the main container from starting and producing its own actionable `fatal()` message, same as before this existed. See `docs/security.md#known-exception--the-permission-fixing-init-container` for the bounded root usage this introduces.
 
 **What NOT to change without good reason:**
 - Do not remove `stdin_open` or `tty` (breaks the interface)
@@ -373,8 +376,6 @@ must always end on that final `exec` — never a plain call, which would leave
 - Do not move the `CLAUDE_SOURCE_PATH` branching into `docker-compose.yml` itself via `${CLAUDE_SOURCE_PATH:-x}` interpolation on `image:`/`pull_policy:` — this was tried and reverted; the raw path leaks into those fields (breaks on `/`) since Compose's substitution can't express a leak-free two-way branch from one arbitrary-content variable. The `docker-compose.override.yml` generated by the scripts is the correct mechanism; keep it as a separate, gitignored file
 - Do not change the `GITHUB_TOKEN_FILE` `environment:` line to interpolate `${GITHUB_TOKEN_FILE:-}` (the host value) instead of the literal `/run/secrets/github_token` — that would leak the *host path* into the container's env (harmless but pointless) and, worse, break `entrypoint.sh`'s assumption that this env var always points at the mount target
 - Do not reintroduce a raw inline-secret env var for the GitHub token — the whole point of the file-mount design is that the token's value never sits in `.env`, in this file, or in the container's process environment
-- Do not remove `claude-code-dock-init` or the main service's `depends_on` on it, and do not make its command exit non-zero on a `chown` failure — it must stay best-effort so an unfixable filesystem still lets the main container start and report its own clearer error
-- Do not fold `claude-code-dock-init`'s logic into `entrypoint.sh`'s root step-down block instead of keeping it a separate service — that block is intentionally restricted to `$HOME` only, never a bind mount (see [Architecture](#architecture) and [AI Guidelines](#ai-guidelines--github-operations)'s sibling reasoning for why root-context code in this project stays narrowly scoped)
 
 ---
 
@@ -608,14 +609,13 @@ Set `AUTO_START_MODE=remote` in `.env`.
 **Checks:**
 1. `docker` present in `PATH` (hard requirement for the rest of this script; `fail()`s immediately if missing, unlike every other check below which only `warn()`s)
 2. Required vars set: `REMOTE_SESSION_NAME`, `WORKSPACE_PATH`, `CONFIG_BASE_PATH`
-3. `docker-compose.yml` in this checkout actually has the `claude-code-dock-init` service — catches an out-of-date clone that predates it
-4. `CLAUDE_SOURCE_PATH` equal to `WORKSPACE_PATH` or `CONFIG_BASE_PATH` — almost always an accidental copy-paste of the wrong variable rather than the (rare, valid) case of using claude-code-dock to develop claude-code-dock itself
-5. `CLAUDE_SOURCE_PATH` set but `docker-compose.override.yml` missing (local build silently not actually happening yet), or the reverse — override present forcing a local build with `CLAUDE_SOURCE_PATH` now unset (stale, left over from a build source that was since switched back to the published image)
-6. Host ownership of `WORKSPACE_PATH` and `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (if they already exist) against `PUID`/`PGID` — the same thing `claude-code-dock-init` fixes automatically, checked here so a filesystem where that chown silently failed (NFS root-squash) doesn't stay invisible
-7. If a container named `CONTAINER_NAME` is running, its baked-in `AUTO_START_MODE`/`CLAUDE_AUTO_APPROVE`/`REMOTE_SESSION_NAME` env vars are compared against the currently-loaded environment — Compose never live-reloads `environment:` values into an already-running container, so an edited `.env` can silently have zero effect until a `--force-recreate`
-8. Whether persistent login credentials (`.claude.json`) already exist for this session — informational, not a problem either way
+3. `CLAUDE_SOURCE_PATH` equal to `WORKSPACE_PATH` or `CONFIG_BASE_PATH` — almost always an accidental copy-paste of the wrong variable rather than the (rare, valid) case of using claude-code-dock to develop claude-code-dock itself
+4. `CLAUDE_SOURCE_PATH` set but `docker-compose.override.yml` missing (local build silently not actually happening yet), or the reverse — override present forcing a local build with `CLAUDE_SOURCE_PATH` now unset (stale, left over from a build source that was since switched back to the published image)
+5. Host ownership of `WORKSPACE_PATH` and `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (if they already exist) against `PUID`/`PGID` — catches the #1 cause of a `fatal()` on a session's first start: Docker auto-creating a missing bind-mount source directory as `root:root` before `install.sh`/`new-session.sh` got a chance to chown it
+6. If a container named `CONTAINER_NAME` is running, its baked-in `AUTO_START_MODE`/`CLAUDE_AUTO_APPROVE`/`REMOTE_SESSION_NAME` env vars are compared against the currently-loaded environment — Compose never live-reloads `environment:` values into an already-running container, so an edited `.env` can silently have zero effect until a `--force-recreate`
+7. Whether persistent login credentials (`.claude.json`) already exist for this session — informational, not a problem either way
 
-**Must not:** write, chown, or otherwise mutate anything — this is a read-only diagnostic, not a fixer. `claude-code-dock-init` (see `docker-compose.yml`) is what actually fixes permissions; this script only reports whether that fix already applied.
+**Must not:** write, chown, or otherwise mutate anything — this is a read-only diagnostic, not a fixer. `install.sh`/`new-session.sh` are what actually fix permissions, on the host, before the container starts; this script only reports whether that already happened.
 
 ---
 
@@ -779,11 +779,10 @@ host-level privilege needed" is `docker-compose.watchdog.yml` (mounts
 - [x] `SHARED_CONFIG_PATH` mount now falls back to `/dev/null` (like `GITHUB_TOKEN_FILE`) instead of a real host directory when unset — no more unexplained `./shared-config/` created for a feature nobody opted into
 - [x] `/etc/claude-dock-packages.list`: `dpkg -l` snapshot baked into the image, so an unpinned `apt-get upgrade` build is bisectable after the fact
 - [x] `scripts/status.sh --json`: machine-readable output for homelab dashboard integration (Homepage, Uptime Kuma, Grafana, ...)
-- [x] `claude-code-dock-init` one-shot container in `docker-compose.yml`: pre-creates and chowns `WORKSPACE_PATH`/`CONFIG_BASE_PATH/REMOTE_SESSION_NAME` to `PUID`/`PGID` before the main service starts, so a brand-new `REMOTE_SESSION_NAME`'s config directory is never left `root`-owned by Docker's own bind-mount auto-create behavior — fixes this regardless of whether the container is brought up via `install.sh`/`session-up.sh` or a bare `docker compose up -d` (e.g. Unraid's Compose Manager plugin)
 - [x] Startup timing + an explicit "ACTION REQUIRED" log block in `entrypoint.sh`/`docker/claude-remote-launch.sh`, persisted to `dock.log`: says which step startup is on, how long each step took, and — when a manual login or remote-control pairing is still pending — the exact `docker exec` command to run, since `docker logs` stops showing readable text the moment `tmux` takes over the tty
 - [x] `scripts/doctor.sh`: read-only preflight command catching the class of misconfiguration that otherwise takes several rounds of troubleshooting to notice (path variables collapsed onto each other, permission drift, a stale `docker-compose.override.yml`, a running container acting on an already-edited `.env`)
-- [x] `scripts/sessions.sh` no longer lists `claude-code-dock-init` containers as sessions; `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE` safety confirmation `install.sh` already had
-- [x] CI validates `docker-compose.yml` (`docker compose config`, all overlays) and `tests/smoke.sh` now also boots via a real `docker compose up` (verifying the `claude-code-dock-init` `depends_on` chain) and runs an end-to-end disaster-recovery drill through the real `backup.sh`/`restore.sh`
+- [x] `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE` safety confirmation `install.sh` already had
+- [x] CI validates `docker-compose.yml` (`docker compose config`, all overlays) and `tests/smoke.sh` now also boots via a real `docker compose up` and runs an end-to-end disaster-recovery drill through the real `backup.sh`/`restore.sh`
 - [x] `scripts/update.sh` waits for `healthy` (not just `Running`) after updating and automatically rolls back to the previous image if it isn't, instead of leaving a broken container up
 - [x] `CHANGELOG.md`: dated, user-facing log of what changed, linked from the README
 
