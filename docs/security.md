@@ -138,20 +138,6 @@ By design, claude-code-dock **does not expose any network ports**. Interaction i
 # Correct -- no port exposure
 ```
 
-### Known exception — the optional watchdog sidecar
-
-Everything above assumes the default setup: no exposed ports, no host-level
-privilege needed. The one deliberate exception is opt-in and off by default:
-`docker-compose.watchdog.yml` (see [Docker Reference: Watchdog](docker.md#watchdog))
-mounts `/var/run/docker.sock` read-write into a small sidecar container so it
-can restart the main container when Docker reports it unhealthy. Docker
-socket access is root-equivalent on the host — it is not scoped to just this
-project's container. Prefer `./scripts/install.sh --with-watchdog` (a plain
-host crontab entry, no socket exposure) unless this host genuinely has no
-cron access; only reach for the sidecar as a last resort, and understand that
-enabling it changes this section's "no exposed ports / no host privilege"
-guarantee for that one additional container.
-
 ### Network isolation (optional)
 
 For greater isolation, restrict the container's network access:
@@ -323,5 +309,4 @@ trivy image claude-code-dock_claude-code-dock
 [ ] Anyone with `docker` access to this host is treated as trusted (env vars are readable via docker inspect/exec; the mounted GITHUB_TOKEN_FILE content is readable via docker exec)
 [ ] If CLAUDE_AUTO_APPROVE=true, the token behind GITHUB_TOKEN_FILE is scoped as narrowly as possible (fine-grained PAT, single repo) -- with auto-approve on, the agent itself (not just the host) can read ~/.git-credentials
 [ ] If CLAUDE_AUTO_APPROVE=true, resource limits are set (size docker-compose.resources.yml and run with `-f docker-compose.yml -f docker-compose.resources.yml`) -- with no per-command confirmation, nothing else caps how much CPU/memory a single command can consume
-[ ] docker-compose.watchdog.yml is NOT in use unless this host has no cron access -- it mounts /var/run/docker.sock (root-equivalent host access) into a sidecar container; prefer `./scripts/install.sh --with-watchdog` (host crontab, no socket exposure)
 ```

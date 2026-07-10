@@ -40,11 +40,10 @@ jobs:
       # `docker compose up`. Runs with zero .env present on purpose -- every variable in these files already has
       # a `${VAR:-default}` fallback, so this is exactly what a fresh clone
       # sees before anyone has configured anything.
-      - name: Validate docker-compose.yml (and the opt-in overlays) parse and resolve
+      - name: Validate docker-compose.yml (and the opt-in overlay) parse and resolve
         run: |
           docker compose -f docker-compose.yml config
           docker compose -f docker-compose.yml -f docker-compose.resources.yml config
-          docker compose -f docker-compose.yml -f docker-compose.watchdog.yml config
 
       - name: Install test dependencies
         run: |

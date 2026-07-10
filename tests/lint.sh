@@ -33,7 +33,6 @@ SHELL_FILES=(
   "$PROJECT_DIR/scripts/claude.sh"
   "$PROJECT_DIR/scripts/remote.sh"
   "$PROJECT_DIR/tests/smoke.sh"
-  "$PROJECT_DIR/docker/watchdog-entrypoint.sh"
 )
 
 echo -e "${CYAN}[→]${RESET} ${BOLD}shellcheck${RESET}"
@@ -92,21 +91,10 @@ else
     ERRORS=$((ERRORS + 1))
   fi
 
-  # docker-compose.watchdog.yml is only ever loaded layered on top of the
-  # base file (see its own header comment) -- validate it that way, not
-  # standalone, since it has no volumes:/environment: of its own for the
-  # main service.
-  if $COMPOSE_CMD -f "$PROJECT_DIR/docker-compose.yml" -f "$PROJECT_DIR/docker-compose.watchdog.yml" config --quiet 2>&1; then
-    echo -e "  ${GREEN}✓${RESET} docker-compose.yml + docker-compose.watchdog.yml"
-  else
-    echo -e "  ${RED}✗${RESET} docker-compose.yml + docker-compose.watchdog.yml"
-    ERRORS=$((ERRORS + 1))
-  fi
-
-  # docker-compose.resources.yml is the same kind of explicit, non-auto-loaded
-  # overlay as docker-compose.watchdog.yml (see its own header comment) --
-  # merges a deploy: block into the existing claude-code-dock service rather
-  # than adding a new one, so validate it layered the same way.
+  # docker-compose.resources.yml is an explicit, non-auto-loaded overlay
+  # (see its own header comment) -- merges a deploy: block into the existing
+  # claude-code-dock service rather than adding a new one, so validate it
+  # layered on top of the base file, not standalone.
   if $COMPOSE_CMD -f "$PROJECT_DIR/docker-compose.yml" -f "$PROJECT_DIR/docker-compose.resources.yml" config --quiet 2>&1; then
     echo -e "  ${GREEN}✓${RESET} docker-compose.yml + docker-compose.resources.yml"
   else

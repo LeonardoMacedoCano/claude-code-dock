@@ -14,9 +14,7 @@
 # next run of those scripts. Editing docker-compose.yml itself means
 # hand-editing a file tracked by git for a value that's inherently
 # host-specific (a Raspberry Pi and a 32-core Unraid box have nothing in
-# common). A separate, explicitly opted-in overlay avoids both problems,
-# using the exact same layering mechanism already established by
-# docker-compose.watchdog.yml -- see that file's header comment.
+# common). A separate, explicitly opted-in overlay avoids both problems.
 #
 # Sizing this is your responsibility -- there is no safe universal default,
 # which is why it isn't merged into docker-compose.yml directly. Recommended

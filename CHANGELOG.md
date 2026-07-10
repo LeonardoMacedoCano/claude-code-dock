@@ -20,10 +20,14 @@ here are dated rather than numbered. Check this file before running
   over the terminal — an explicit "ACTION REQUIRED" block naming the exact
   `docker exec ... tmux attach-session -t main` command to run when a first
   login or Remote Control pairing is still pending.
-- CI: a `docker compose config` step validates `docker-compose.yml` and both
-  opt-in overlays (`docker-compose.resources.yml`, `docker-compose.watchdog.yml`)
-  parse and resolve correctly — nothing previously exercised the compose file
-  itself.
+- CI: a `docker compose config` step validates `docker-compose.yml` and the
+  opt-in `docker-compose.resources.yml` overlay parse and resolve correctly —
+  nothing previously exercised the compose file itself.
+- Removed the opt-in watchdog sidecar (`docker-compose.watchdog.yml`) — it
+  mounted `/var/run/docker.sock` (root-equivalent host access) to solve
+  exactly what `./scripts/install.sh --with-watchdog`'s host crontab already
+  solves without that exposure. The crontab path is now the only way to
+  schedule `scripts/watchdog.sh`.
 - CI (`tests/smoke.sh`): now also boots a container via a real
   `docker compose up` (not just `docker run`), asserting the main service
   reaches `healthy`.
