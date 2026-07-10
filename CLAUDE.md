@@ -20,8 +20,67 @@ claude-code-dock is a Docker infrastructure solution for running **Claude Code**
 - An authentication proxy or intermediary
 - A login automation system
 - A project focused on Remote Control (Remote Control is an optional feature)
+- A general server-monitoring, orchestration, or ops platform (see [Scope Discipline](#scope-discipline) below)
 
 **Primary goal, stated plainly:** let `claude` run as a durable, always-authenticated background process on a server you control, so a Remote Control session (or an SSH terminal) is available the instant you open it — no re-login, no re-preparing the environment, no dependency on a laptop staying awake.
+
+---
+
+## Scope Discipline
+
+**Read this before implementing any new feature, including one requested live in a session.**
+
+claude-code-dock is deliberately small: a Dockerfile, a compose file, and a
+handful of shell scripts wrapped around volumes Claude Code already writes
+to. It must stay that size. This project's own history is the evidence for
+why: it has repeatedly added, then reverted, infrastructure that seemed
+reasonable in isolation but turned out to duplicate something a one-line
+`docker`/`tar` command, a host crontab entry, or a paragraph of
+documentation already covered —
+
+```
+refactor(backup):  remover criptografia GPG nativa e install.sh --with-backup-cron
+refactor(status):  remover suporte a --json
+refactor(scripts): remover doctor.sh
+refactor(watchdog): remover sidecar opcional que expunha docker.sock ao host
+refactor(compose): remover claude-code-dock-init (redundante com install.sh/new-session.sh)
+```
+
+Treat that as the default outcome of "nice-to-have" additions, not the
+exception. The bar for adding a new script, env var, background process,
+or dependency is higher than the bar for adding a paragraph to
+`docs/troubleshooting.md`.
+
+**Before building a feature request, check it against this list. If it
+fails any item, say so explicitly and propose the smaller alternative
+instead of silently implementing the larger version:**
+
+1. **Serves the primary goal directly, or is it adjacent tooling?** The
+   primary goal is a persistent, always-authenticated `claude` process
+   (see Overview above). Monitoring, orchestration, reporting, and
+   encryption are adjacent concerns that generic, already-trusted tools
+   (`cron`, `tar`+`gpg`, `docker inspect`, `ntfy`, Watchtower) already
+   solve — this project should call them, not reimplement them.
+2. **No new steady-state failure mode.** A one-shot script the operator
+   runs on demand is cheap. A new background process, daemon, sidecar, or
+   cron job that must keep working correctly forever is expensive — it is
+   a new thing that can silently break between the operator's visits.
+3. **Documented recipe before shipped code.** If the need can be met with
+   a snippet in `docs/` or a manual `docker exec`/`crontab` line the
+   operator opts into, that is the correct implementation — not a new
+   script, flag, or `entrypoint.sh`-validated env var.
+4. **The container stays dumb.** Logic that can live on the host, in a
+   script the operator runs when needed, belongs on the host — not inside
+   `entrypoint.sh` or baked into the image, whose only job is keeping
+   `claude` alive and authenticated.
+
+When a request clearly fails this checklist, name which item it fails and
+offer the documentation-only or host-side alternative. When it's
+ambiguous, ask before writing code that adds a new file, env var, or
+dependency — do not default to building the fuller version "to be safe."
+This checklist applies with the same weight to requests made by the
+project's own maintainer in a live session, not just external
+contributions.
 
 ---
 
@@ -765,9 +824,10 @@ Architecture above), no host-level privilege needed at all.
 
 1. Read this file completely
 2. Understand the core principle: **the selected process is PID 1**
-3. Read `docs/architecture.md` to understand the design
-4. Never break the chain: `entrypoint.sh` must always end with `exec tmux new-session -s main <CMD_BIN> [CMD_ARGS...]` (or `exec bash` in shell mode)
-5. Keep the container running as user `node` (non-root)
+3. Read [Scope Discipline](#scope-discipline) and run any new feature through its checklist before writing code
+4. Read `docs/architecture.md` to understand the design
+5. Never break the chain: `entrypoint.sh` must always end with `exec tmux new-session -s main <CMD_BIN> [CMD_ARGS...]` (or `exec bash` in shell mode)
+6. Keep the container running as user `node` (non-root)
 
 ### When submitting a PR
 
