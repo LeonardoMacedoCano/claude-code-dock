@@ -395,10 +395,12 @@ docker compose pull
 docker compose up -d
 ```
 
-The published image is rebuilt weekly (and on every push to `main`) with a
-cache-busting build arg specifically for the `npm install -g
-@anthropic-ai/claude-code` layer, so `docker compose pull` reliably gets a
-recent Claude Code release without waiting on a claude-code-dock commit.
+The published image is rebuilt on every push to `main`, and on demand via a
+manual `workflow_dispatch` run of `docker-publish.yml` (no scheduled/cron
+trigger), with a cache-busting build arg specifically for the `npm install -g
+@anthropic-ai/claude-code` layer. Run the workflow manually whenever you want
+`docker compose pull` to pick up a newer Claude Code release without waiting
+on a claude-code-dock commit.
 
 If `CLAUDE_SOURCE_PATH` is set (local development of claude-code-dock itself),
 `update.sh` falls back to `docker compose build --no-cache`, which forces a

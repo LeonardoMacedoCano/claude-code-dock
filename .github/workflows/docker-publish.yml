@@ -4,20 +4,19 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-  schedule:
-    # Rebuilds `latest` weekly even with no repo changes, so the published
-    # image picks up new @anthropic-ai/claude-code releases (CACHEBUST below
-    # forces a fresh npm install rather than reusing the GHA layer cache).
-    - cron: "0 6 * * 1"
   workflow_dispatch:
     inputs:
       promote_stable:
         description: >-
           Also tag+push this build as 'stable'. 'latest' keeps moving on every
-          push and on the weekly rebuild regardless of this input -- 'stable'
-          only ever moves when a human runs this manually with this checked,
-          so anyone can pin CLAUDE_DOCK_TAG=stable to avoid riding an
-          untested weekly @anthropic-ai/claude-code bump.
+          push to main regardless of this input (including a manual dispatch
+          run from main, since is_default_branch doesn't care how the run was
+          triggered) -- 'stable' only ever moves when a human runs this
+          manually with this checked. Run this workflow manually (no push
+          needed) to pick up a new @anthropic-ai/claude-code release --
+          CACHEBUST below forces a fresh npm install instead of reusing the
+          GHA layer cache -- and check this box too if you also want to
+          pin CLAUDE_DOCK_TAG=stable to it.
         type: boolean
         default: false
 

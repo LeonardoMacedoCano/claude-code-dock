@@ -2,9 +2,10 @@
 
 Notable user-facing changes to claude-code-dock. This project doesn't use a
 versioned release cadence yet — `:latest` moves on every push to `main` and
-on a weekly rebuild (see `.github/workflows/docker-publish.yml`), so entries
-here are dated rather than numbered. Check this file before running
-`./scripts/update.sh` if you want to know what's actually changing.
+on a manually triggered `workflow_dispatch` run (see
+`.github/workflows/docker-publish.yml`), so entries here are dated rather
+than numbered. Check this file before running `./scripts/update.sh` if you
+want to know what's actually changing.
 
 ## Unreleased
 
@@ -52,6 +53,13 @@ here are dated rather than numbered. Check this file before running
 - `tzdata` added to the image — `TZ` previously only affected the startup
   banner's own text, not the actual timestamps in `dock.log`, since the
   zoneinfo database it depends on wasn't installed.
+
+### Changed
+- `docker-publish.yml` no longer rebuilds `:latest` on a weekly cron. A
+  rebuild now only happens on a push to `main` or an explicit manual
+  `workflow_dispatch` run — run the workflow by hand when you want to pull in
+  a new `@anthropic-ai/claude-code` release that isn't tied to a
+  claude-code-dock commit.
 
 ### Fixed
 - `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE=true`
