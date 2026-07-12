@@ -35,6 +35,9 @@ Recommended structure on Unraid:
 
 **Unraid UI container console:**
 - Go to **Docker** -> click the `claude-code-dock` container -> **Console**
+  (or, on a Method 1/Compose install, your Compose plugin's own per-service
+  **Shell**/**Console** field, if it exposes one — see
+  [below](#via-a-docker-compose-plugins-own-consoleshell-field-method-1-installs))
 - Connects directly to Claude Code (requires the Shell field set to `claude-console` — no slashes)
 - To disconnect without stopping: `Ctrl+B` then `D`
 
@@ -328,6 +331,24 @@ To disconnect without stopping Claude: `Ctrl+B` then `D`.
 4. Click the `claude-code-dock` container -> **Console**
 
 The Console opens directly into the Claude Code session. To disconnect: `Ctrl+B` then `D`.
+
+### Via a Docker Compose plugin's own Console/Shell field (Method 1 installs)
+
+Several Unraid Compose plugins (e.g. **Docker Compose Plus**, **Compose
+Manager**) let you set a per-service **Shell** field directly in the stack's
+own editor, mirroring the native Docker template field from
+[Method 2](#22--add-container-via-ui) above — no need to go through
+Unraid's separate **Docker** tab afterward. Set it to `claude-console` (no
+slashes, no quotes) on the `claude-code-dock` service and the plugin's own
+**Console** button opens straight into the Claude Code session, exactly as
+if you'd run:
+```bash
+docker exec -it --user node <container-name> tmux attach-session -t main
+```
+Same disconnect key as everywhere else: `Ctrl+B` then `D`. This works for a
+Method 1 (Docker Compose) install too — `claude-console` is baked into the
+image itself (`/usr/bin/claude-console`), not something Method 2 or the CA
+template add on top of it.
 
 ### About the "Logs" tab in the Docker UI
 
