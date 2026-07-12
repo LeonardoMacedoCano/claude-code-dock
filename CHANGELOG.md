@@ -10,14 +10,15 @@ want to know what's actually changing.
 ## Unreleased
 
 ### Added
-- `SHARED_CREDENTIALS_FILE`: optional host file that lets several sessions
-  reuse one Claude Code login instead of each `REMOTE_SESSION_NAME` needing
-  its own (which was, and remains, the default). Same `/dev/null`-fallback
-  idiom as `GITHUB_TOKEN_FILE`/`GLOBAL_CONFIG_PATH` — a no-op unless set. The
-  first session to log in seeds the file; every session started afterward
-  loads from it instead of prompting for login. One-time sync at container
-  startup, not a live/continuous share. See
-  [docs/docker.md](docs/docker.md#claude-code-dock-volumes).
+- `SHARED_CREDENTIALS_PATH`: optional host directory that lets several
+  sessions reuse one Claude Code login instead of each `REMOTE_SESSION_NAME`
+  needing its own (which was, and remains, the default). Same
+  `/dev/null`-fallback idiom as `GITHUB_TOKEN_FILE`/`GLOBAL_CONFIG_PATH` — a
+  no-op unless set. Doesn't need to exist beforehand (created empty on first
+  use, unlike a single-file mount). The first session to log in seeds it;
+  every session started afterward loads from it instead of prompting for
+  login. One-time sync at container startup, not a live/continuous share.
+  See [docs/docker.md](docs/docker.md#claude-code-dock-volumes).
 - `GLOBAL_CONFIG_PATH` now also links a `skills/` subdirectory into
   `~/.claude/skills/` at startup, mirroring the existing `commands/` handling
   (one symlink per skill directory, no merge step — same idiom `CLAUDE.md`'s
@@ -30,7 +31,7 @@ want to know what's actually changing.
   That was never true — `REMOTE_SESSION_NAME` gets its own isolated
   subfolder under `CONFIG_BASE_PATH` regardless, so each session always
   needed its own login. Corrected, and now points to the new
-  `SHARED_CREDENTIALS_FILE` variable above for anyone who actually wants
+  `SHARED_CREDENTIALS_PATH` variable above for anyone who actually wants
   that behavior.
 
 ### Changed

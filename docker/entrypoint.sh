@@ -298,36 +298,45 @@ fi
 # Optional: let multiple sessions reuse a single Claude Code login instead of
 # one per REMOTE_SESSION_NAME (the default -- config, including credentials,
 # is isolated per session by design; see CONFIG_BASE_PATH/REMOTE_SESSION_NAME
-# above). Mounted to a dedicated path rather than straight onto
-# ~/.claude/.credentials.json: Compose has no leak-free way to make a volume
-# line conditional (same constraint noted on CLAUDE_SOURCE_PATH's build
-# context above), so the usual /dev/null-fallback idiom would otherwise
-# shadow every session's real credentials file the moment this feature
-# shipped, even for operators who never set SHARED_CREDENTIALS_FILE.
-# -f (regular file) is what actually gates this block: the unset default
-# mounts /dev/null here, which is a character special file, so -f is false
-# and this whole block is a silent no-op for every operator who hasn't
-# opted in -- no extra log lines, no extra work.
-SHARED_CREDS_MOUNT="${HOME}/.claude-shared-credentials.json"
+# above). Mounted to a dedicated *directory* rather than straight onto
+# ~/.claude/.credentials.json (or a dedicated single file): Compose has no
+# leak-free way to make a volume line conditional (same constraint noted on
+# CLAUDE_SOURCE_PATH's build context above), so the usual /dev/null-fallback
+# idiom would otherwise shadow every session's real credentials the moment
+# this feature shipped, for every operator who never set
+# SHARED_CREDENTIALS_PATH. A directory (rather than a single file) also means
+# a host path that doesn't exist yet is simply created empty on first use --
+# unlike a missing file source, which Docker turns into an unusable directory
+# at the mount target, forcing operators to `touch` it by hand before ever
+# starting the first container with this set.
+# -d is what actually gates this block: the unset default mounts /dev/null
+# here, which is a character special file, so -d is false and this whole
+# block is a silent no-op for every operator who hasn't opted in -- no extra
+# log lines, no extra work.
+SHARED_CREDS_DIR="${HOME}/.claude-shared-credentials"
+SHARED_CREDS_FILE="${SHARED_CREDS_DIR}/.credentials.json"
 SESSION_CREDS="${HOME}/.claude/.credentials.json"
 
-if [ -d "${SHARED_CREDS_MOUNT}" ]; then
-    # Same Docker gotcha as GITHUB_TOKEN_FILE below: a bind-mount source that
-    # doesn't exist yet on the host becomes an empty directory here instead
-    # of the intended empty file.
-    log_warn "SHARED_CREDENTIALS_FILE is a directory, not a file — the host path probably doesn't exist yet. Create it first (touch <path> on the host) and run: docker compose up -d --force-recreate"
-elif [ -f "${SHARED_CREDS_MOUNT}" ]; then
-    if [ -s "${SESSION_CREDS}" ]; then
+if [ -d "${SHARED_CREDS_DIR}" ]; then
+    if ! ( touch "${SHARED_CREDS_DIR}/.write_test" 2>/dev/null && rm -f "${SHARED_CREDS_DIR}/.write_test" 2>/dev/null ); then
+        # Same class of issue as CONFIG_BASE_PATH/WORKSPACE_PATH in
+        # validate_config() above -- a host directory that didn't exist yet
+        # gets auto-created by Docker as root-owned. Non-fatal here (unlike
+        # validate_config()'s checks): this session still logs in on its own
+        # and works normally, it just can't participate in the shared pool
+        # until the operator fixes ownership.
+        log_warn "SHARED_CREDENTIALS_PATH is not writable by this container's user -- shared login sync skipped. Fix on the host: chown -R ${PUID:-1000}:${PGID:-1000} <your SHARED_CREDENTIALS_PATH>, then docker compose up -d --force-recreate"
+    elif [ -s "${SESSION_CREDS}" ]; then
         # This session already has its own login. Never overwrite it with a
         # (possibly stale) shared copy -- only backfill the shared file if
         # it's still empty, so the first session to log in seeds the pool.
-        if [ ! -s "${SHARED_CREDS_MOUNT}" ]; then
-            cp "${SESSION_CREDS}" "${SHARED_CREDS_MOUNT}"
-            log_info "Shared credentials: seeded SHARED_CREDENTIALS_FILE from this session's existing login"
+        if [ ! -s "${SHARED_CREDS_FILE}" ]; then
+            cp "${SESSION_CREDS}" "${SHARED_CREDS_FILE}"
+            log_info "Shared credentials: seeded SHARED_CREDENTIALS_PATH from this session's existing login"
         fi
-    elif [ -s "${SHARED_CREDS_MOUNT}" ]; then
-        cp "${SHARED_CREDS_MOUNT}" "${SESSION_CREDS}"
-        log_info "Shared credentials: loaded from SHARED_CREDENTIALS_FILE (skips first login for this session)"
+    elif [ -s "${SHARED_CREDS_FILE}" ]; then
+        cp "${SHARED_CREDS_FILE}" "${SESSION_CREDS}"
+        log_info "Shared credentials: loaded from SHARED_CREDENTIALS_PATH (skips first login for this session)"
     fi
 fi
 
