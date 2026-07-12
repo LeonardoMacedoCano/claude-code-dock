@@ -181,6 +181,7 @@ directly. `docker exec claude-code-dock env` will never show these.
 | `SHARED_CREDENTIALS_PATH` | `docker-compose.yml` volumes | Optional host directory to share one Claude Code login across sessions instead of one per `REMOTE_SESSION_NAME`. Doesn't need to exist beforehand — created empty on first use |
 | `CLAUDE_DOCK_TAG` | `docker-compose.yml` `image:` | Published tag to pull (default `latest`; `stable` or a pinned `vX.Y.Z`) |
 | `CLAUDE_DOCK_VERSION` | `docker-compose.yml` `build:` | Git ref to build from when the pull fails and `CLAUDE_SOURCE_PATH` is unset (default `main`) |
+| `CLAUDE_CODE_VERSION` | `docker-compose.yml` `build.args` | npm version of `@anthropic-ai/claude-code` to install (default `latest`). Only takes effect on a build — a no-op when pulling the prebuilt image, since its Claude Code version was already fixed at CI build time |
 | `CLAUDE_SOURCE_PATH` | `docker-compose.yml` `build:` | Local clone to build from instead of pulling (advanced/dev) — see [Local development](#local-development) |
 | `BACKUP_RETENTION` | `scripts/backup.sh` | Backups kept per session (default `10`) |
 | `WATCHDOG_NTFY_URL` | `scripts/watchdog.sh` | Webhook notified on restart/skip — read on the host by the crontab path; see [Watchdog](#watchdog) below |
