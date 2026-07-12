@@ -344,6 +344,7 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
 | `GITHUB_TOKEN_FILE` | `` | HOST path to a file holding the GitHub token — `docker-compose.yml` auto-mounts it read-only to the fixed in-container path `/run/secrets/github_token` |
 | `CLAUDE_DOCK_TAG` | `latest` | Published tag `docker compose pull` fetches by default (`latest`, `stable`, or a pinned `vX.Y.Z`). Registry/repo are hardcoded in `docker-compose.yml`, not configurable |
 | `CLAUDE_DOCK_VERSION` | `main` | Branch/tag to build from when not pulling the prebuilt image (build context ref) |
+| `CLAUDE_CODE_VERSION` | `latest` | npm version of `@anthropic-ai/claude-code` to install, passed as a `docker-compose.yml build.args` entry to the Dockerfile's `ARG CLAUDE_CODE_VERSION`. Only takes effect on a build (`CLAUDE_SOURCE_PATH` set, or a manual `docker compose build`) — irrelevant when pulling the prebuilt image, since that image's Claude Code version was already fixed at the CI build that produced it |
 | `CLAUDE_SOURCE_PATH` | `` | Local claude-code-dock clone to use as build context instead of pulling/GitHub (advanced/dev use). Highest priority when set — always wins; `install.sh`/`update.sh`/`session-up.sh` build with `--no-cache` and generate `docker-compose.override.yml` so it also wins for any later plain `docker compose up` |
 | `WORKSPACE_PATH` | `./workspaces` | Path to projects on the host |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories |
