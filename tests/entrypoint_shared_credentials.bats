@@ -27,12 +27,13 @@ teardown() {
   [[ "$output" != *"SHARED_CREDENTIALS_PATH"* ]]
 }
 
-@test "empty shared credentials dir and no session credentials is a silent no-op" {
+@test "empty shared credentials dir and no session credentials links without logging" {
   mkdir -p "$SHARED_CREDS_DIR"
 
   run bash "$ENTRYPOINT"
   [ "$status" -eq 0 ]
 
+  [ -L "$SESSION_CREDS" ]
   [ ! -f "$SESSION_CREDS" ]
   [[ "$output" != *"Shared credentials"* ]]
 }
@@ -44,23 +45,26 @@ teardown() {
   run bash "$ENTRYPOINT"
   [ "$status" -eq 0 ]
 
+  [ -L "$SESSION_CREDS" ]
   [ -f "$SESSION_CREDS" ]
   grep -q "shared-token" "$SESSION_CREDS"
-  [[ "$output" == *"Shared credentials: loaded from SHARED_CREDENTIALS_PATH"* ]]
+  [[ "$output" == *"Shared credentials: session linked to SHARED_CREDENTIALS_PATH"* ]]
 }
 
-@test "seeds the shared directory from an existing session login when it is empty" {
+@test "promotes an existing session login into an empty shared directory and links to it" {
   echo '{"token":"session-token"}' > "$SESSION_CREDS"
   mkdir -p "$SHARED_CREDS_DIR"
 
   run bash "$ENTRYPOINT"
   [ "$status" -eq 0 ]
 
+  [ -L "$SESSION_CREDS" ]
   grep -q "session-token" "$SHARED_CREDS_FILE"
-  [[ "$output" == *"Shared credentials: seeded SHARED_CREDENTIALS_PATH"* ]]
+  grep -q "session-token" "$SESSION_CREDS"
+  [[ "$output" == *"Shared credentials: promoted this session's own login into SHARED_CREDENTIALS_PATH"* ]]
 }
 
-@test "never overwrites a session's own existing credentials with a stale shared copy" {
+@test "an existing session login promotion overwrites a stale shared copy" {
   echo '{"token":"session-token"}' > "$SESSION_CREDS"
   mkdir -p "$SHARED_CREDS_DIR"
   echo '{"token":"stale-shared-token"}' > "$SHARED_CREDS_FILE"
@@ -68,9 +72,23 @@ teardown() {
   run bash "$ENTRYPOINT"
   [ "$status" -eq 0 ]
 
+  [ -L "$SESSION_CREDS" ]
   grep -q "session-token" "$SESSION_CREDS"
+  grep -q "session-token" "$SHARED_CREDS_FILE"
   ! grep -q "stale-shared-token" "$SESSION_CREDS"
-  [[ "$output" != *"Shared credentials"* ]]
+  [[ "$output" == *"Shared credentials: promoted this session's own login into SHARED_CREDENTIALS_PATH"* ]]
+}
+
+@test "a login performed after startup is written straight into the shared file via the symlink" {
+  mkdir -p "$SHARED_CREDS_DIR"
+
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+  [ -L "$SESSION_CREDS" ]
+
+  echo '{"token":"post-boot-login"}' > "$SESSION_CREDS"
+
+  grep -q "post-boot-login" "$SHARED_CREDS_FILE"
 }
 
 @test "unwritable shared credentials directory warns and skips sync instead of crashing" {
@@ -82,6 +100,7 @@ teardown() {
   [ "$status" -eq 0 ]
 
   [[ "$output" == *"SHARED_CREDENTIALS_PATH is not writable"* ]]
+  [ ! -L "$SESSION_CREDS" ]
 
   chmod 755 "$SHARED_CREDS_DIR"
 }
