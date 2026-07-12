@@ -120,14 +120,6 @@ if [ "${CONTAINER_STATUS}" = "running" ]; then
     MODE_ENV=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null \
         | grep "^AUTO_START_MODE=" | cut -d= -f2 || echo "unknown")
     row "Mode:" "${MODE_ENV:-interactive}"
-
-    AUTO_APPROVE=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${CONTAINER_NAME}" 2>/dev/null \
-        | grep "^CLAUDE_AUTO_APPROVE=" | cut -d= -f2 || echo "unknown")
-    if [ "${AUTO_APPROVE}" = "true" ]; then
-        row "Auto-approve:" "enabled (--dangerously-skip-permissions)" "${YELLOW}"
-    else
-        row "Auto-approve:" "disabled"
-    fi
     echo ""
 fi
 

@@ -17,11 +17,7 @@
 # common). A separate, explicitly opted-in overlay avoids both problems.
 #
 # Sizing this is your responsibility -- there is no safe universal default,
-# which is why it isn't merged into docker-compose.yml directly. Recommended
-# especially when CLAUDE_AUTO_APPROVE=true: with no per-command human
-# checkpoint, nothing else in this project caps how much CPU/memory a single
-# Claude-issued command can consume on this host. See
-# docs/security.md#credential-protection (point 6).
+# which is why it isn't merged into docker-compose.yml directly.
 services:
   claude-code-dock:
     deploy:

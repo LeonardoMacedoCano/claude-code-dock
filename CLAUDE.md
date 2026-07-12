@@ -132,14 +132,13 @@ Not just running the project — modifying claude-code-dock itself and needs the
 | Git commit authorship | `GIT_USER_NAME`, `GIT_USER_EMAIL` | Silent no-op — commits just get no author identity |
 | Git push / private-repo pull | `GITHUB_TOKEN_FILE` | Silent no-op — `git push`/private `git pull` just fails at git's own auth layer |
 | Auto-clone into `/workspace` on first start | `GIT_REPO_URL` | Silent no-op; also skipped (not an error) if `/workspace` is already non-empty |
-| `--dangerously-skip-permissions` | `CLAUDE_AUTO_APPROVE=true` | Applied via `settings.json`; defaults to `false` |
-| Extra Claude CLI flags | `CLAUDE_EXTRA_ARGS` | Silent no-op when unset; malformed quoting warns and falls back to plain splitting; parsed via `xargs`, not `eval` — no shell expansion |
+| Extra Claude CLI flags (e.g. `--dangerously-skip-permissions`) | `CLAUDE_EXTRA_ARGS` | Silent no-op when unset; malformed quoting warns and falls back to plain splitting; parsed via `xargs`, not `eval` — no shell expansion |
 | Remap container user off UID/GID 1000 | `PUID`/`PGID` | Validated — `0` or non-integer is `fatal()` |
 | Global `CLAUDE.md`/`commands/`/`skills/` across sessions | `GLOBAL_CONFIG_PATH` | Silent no-op when unset |
 | Build from local clone instead of pulling | `CLAUDE_SOURCE_PATH` | Not validated by the container itself; `install.sh`/`update.sh`/`session-up.sh` generate `docker-compose.override.yml` to enforce it — a manual `docker compose up -d` run from the same directory picks that up too, once one of the scripts has generated it at least once |
 | Pin the pulled image tag | `CLAUDE_DOCK_TAG` | Silent no-op when unset (falls back to `:latest`); ignored entirely if `CLAUDE_SOURCE_PATH` is set |
 | Backup retention beyond the last 10 | `BACKUP_RETENTION` | Silent no-op when unset (defaults to 10) |
-| CPU/memory resource limits | `docker-compose.resources.yml` (opt-in overlay, not an env var) | Not applied unless explicitly layered with `-f`; `install.sh` only warns when `CLAUDE_AUTO_APPROVE=true` and it's absent |
+| CPU/memory resource limits | `docker-compose.resources.yml` (opt-in overlay, not an env var) | Not applied unless explicitly layered with `-f` |
 | Watchdog restart notifications | `WATCHDOG_NTFY_URL` (host-side only) | Silent no-op when unset or `curl` missing |
 
 ---
@@ -325,8 +324,7 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
 | `PUID` | `1000` | UID the container remaps its internal `node` account to before dropping root (see `docker/entrypoint.sh`'s root step-down block). `0` is rejected |
 | `PGID` | `1000` | GID counterpart to `PUID` |
 | `AUTO_START_MODE` | `interactive` | Execution mode: `interactive`, `remote`, `shell` |
-| `CLAUDE_AUTO_APPROVE` | `false` | Enables `--dangerously-skip-permissions` (interactive/remote modes) |
-| `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command. Parsed with quote-aware splitting via `xargs` (not `eval`), so a quoted substring with spaces survives as one argument and shell metacharacters ($(...), backticks, globs) are never expanded |
+| `CLAUDE_EXTRA_ARGS` | `` | Extra arguments appended to the final command (e.g. `--dangerously-skip-permissions`). Parsed with quote-aware splitting via `xargs` (not `eval`), so a quoted substring with spaces survives as one argument and shell metacharacters ($(...), backticks, globs) are never expanded |
 | `GITHUB_TOKEN_FILE` | `` | HOST path to a file holding the GitHub token — `docker-compose.yml` auto-mounts it read-only to the fixed in-container path `/run/secrets/github_token` |
 | `CLAUDE_DOCK_TAG` | `latest` | Published tag `docker compose pull` fetches by default (`latest`, `stable`, or a pinned `vX.Y.Z`). Registry/repo are hardcoded in `docker-compose.yml`, not configurable |
 | `CLAUDE_DOCK_VERSION` | `main` | Branch/tag to build from when not pulling the prebuilt image (build context ref) |
@@ -353,8 +351,8 @@ AUTO_START_MODE=<anything else> → fatal at startup (see validate_config in ent
 ### Resulting commands per mode
 
 ```
-interactive: claude [--dangerously-skip-permissions] [CLAUDE_EXTRA_ARGS]
-remote:      claude [--dangerously-skip-permissions] --remote-control [REMOTE_SESSION_NAME] [CLAUDE_EXTRA_ARGS]
+interactive: claude [CLAUDE_EXTRA_ARGS]
+remote:      claude --remote-control [REMOTE_SESSION_NAME] [CLAUDE_EXTRA_ARGS]
              (via docker/claude-remote-launch.sh — see below)
 shell:       bash
 ```
@@ -423,7 +421,7 @@ must always end on that final `exec` — never a plain call, which would leave
 - `image: ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest}` + `build:`: both present intentionally — `image:` is the default pull path, `build:` is the fallback used when `CLAUDE_SOURCE_PATH` is set. `build.args` also passes `CLAUDE_DOCK_SOURCE_PATH`/`CLAUDE_DOCK_VERSION` through so the Dockerfile can bake which one was used into `/etc/claude-dock-build-source` — read by `entrypoint.sh`'s startup log and `scripts/status.sh`. Full rationale for why both fields coexist, and why a bare `docker compose up -d` needs `docker-compose.override.yml` to actually rebuild from `CLAUDE_SOURCE_PATH`: [docs/architecture.md — Design Decisions](docs/architecture.md#design-decisions).
 - `- ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro` in `volumes:`: the "optional file mount" idiom — mounts the real host token file when `.env`'s `GITHUB_TOKEN_FILE` is set, or a harmless empty `/dev/null` when it's not, so this line is always present and always safe regardless of whether the operator configured a token. Paired with `- GITHUB_TOKEN_FILE=/run/secrets/github_token` in `environment:`, which is a **literal**, not `${GITHUB_TOKEN_FILE:-}` — the container always looks at this fixed convention path; the host-side `.env` value is only ever used for the volume mount source, never passed into the container directly.
 - `- ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro` in `volumes:`: same optional-file-mount idiom as `GITHUB_TOKEN_FILE` above — falls back to `/dev/null` rather than a real host directory when unset, so the feature never leaves behind an unexplained root-owned directory nobody opted into.
-- Resource limits (CPU/memory) are **not** in this file — they live in the opt-in `docker-compose.resources.yml` overlay (explicit `-f`, never auto-loaded), both because `docker-compose.override.yml` is already scripts-managed for `CLAUDE_SOURCE_PATH` and would silently clobber anything else placed in it, and because a hardcoded limit here would be wrong for most hosts. See that file's header comment and `scripts/install.sh`'s `check_auto_approve_safety()`.
+- Resource limits (CPU/memory) are **not** in this file — they live in the opt-in `docker-compose.resources.yml` overlay (explicit `-f`, never auto-loaded), both because `docker-compose.override.yml` is already scripts-managed for `CLAUDE_SOURCE_PATH` and would silently clobber anything else placed in it, and because a hardcoded limit here would be wrong for most hosts. See that file's header comment.
 - `- PUID=${PUID:-1000}` / `- PGID=${PGID:-1000}` in `environment:`: read by `entrypoint.sh`'s root step-down block to remap the `node` account before dropping privilege. No corresponding `user:` field is set on the service — the container must start as root (the image's default, see the `Dockerfile` section) for that remap to be possible at all.
 
 **What NOT to change without good reason:**
@@ -493,15 +491,6 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 - Create `.env` from `.env.example` if it doesn't exist
 - Ask for confirmation before creating directories on the host
 - Display clear instructions after installation
-- If `CLAUDE_AUTO_APPROVE=true` and `docker-compose.resources.yml` is not present on
-  disk, require an explicit y/N confirmation before continuing
-  (`check_auto_approve_safety()`) — with no per-command checkpoint and no CPU/memory
-  ceiling, nothing else bounds what a single Claude-issued command can do to this
-  host. `docker/entrypoint.sh` logs the same warning on every start so it's still
-  visible when the container was brought up some other way (bare `docker compose up`,
-  `scripts/update.sh`, `scripts/session-up.sh`, a third-party tool). Detection is
-  best-effort (file presence, not "will this exact `docker compose up` load it") —
-  see the `docker-compose.yml` section above.
 - `--with-watchdog`: after a successful install, add a host crontab entry running
   `scripts/watchdog.sh` every 5 minutes (`setup_watchdog_cron()`), idempotently —
   re-running it must never duplicate the cron line. Falls back to printing the line
@@ -655,7 +644,6 @@ Set `AUTO_START_MODE=remote` in `.env`.
 - `WORKSPACE_PATH`: path to the workspace on the host
 - `CONFIG_BASE_PATH` / `REMOTE_SESSION_NAME`: base dir + session ID; credentials live at `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` on the host
 - `AUTO_START_MODE`: execution mode (interactive/remote/shell) — validated at container startup by `validate_config()` in `entrypoint.sh`
-- `CLAUDE_AUTO_APPROVE`: enables --dangerously-skip-permissions (default `false`)
 - `CLAUDE_EXTRA_ARGS`: extra arguments for claude (quote-aware parsing)
 - `TZ`: timezone
 - `GIT_USER_NAME` / `GIT_USER_EMAIL`: optional Git configuration
@@ -787,7 +775,7 @@ Architecture above), no host-level privilege needed at all.
 - [x] docker-compose.yml with persistent volumes
 - [x] Three execution modes (interactive/remote/shell)
 - [x] Management scripts (install, update, backup, restore, attach, shell, logs, claude, remote, status, watchdog, new-session, session-up, sessions)
-- [x] AUTO_START_MODE, CLAUDE_AUTO_APPROVE, CLAUDE_EXTRA_ARGS, GITHUB_TOKEN_FILE variables
+- [x] AUTO_START_MODE, CLAUDE_EXTRA_ARGS, GITHUB_TOKEN_FILE variables
 - [x] Complete documentation (Docker, Unraid, Troubleshooting, Security, Architecture)
 - [x] Dockerfile `HEALTHCHECK` + `scripts/watchdog.sh` for external monitoring/auto-restart on `unhealthy`
 - [x] `scripts/status.sh` — environment state overview
@@ -800,16 +788,15 @@ Architecture above), no host-level privilege needed at all.
 - [x] Renamed `SHARED_CONFIG_PATH` to `GLOBAL_CONFIG_PATH` (and its mount target from `.claude-shared` to `.claude-global`) — "shared" didn't distinguish it from every other bind mount in this project, which are all host/container-shared; "global" matches Claude Code's own user-level-vs-project-level `CLAUDE.md` vocabulary. Breaking change for anyone with the old variable name already in `.env`
 - [x] CI smoke test (`tests/smoke.sh`): builds the image and boots a real container per `AUTO_START_MODE`, gating `docker-publish.yml`'s publish job on Docker's own `HEALTHCHECK` actually going `healthy` — the mocked `bats` suite alone never exercised a real container
 - [x] `scripts/install.sh --with-watchdog`: one-flag host crontab setup for `scripts/watchdog.sh`, idempotent
-- [x] `CLAUDE_AUTO_APPROVE=true` without resource limits now requires explicit confirmation in `install.sh`, and is logged as a warning by `entrypoint.sh` on every start regardless of how the container was brought up
 - [x] `scripts/backup.sh` warns explicitly that every archive contains plaintext credentials
 - [x] `docker-compose.resources.yml`: opt-in CPU/memory limit overlay (explicit `-f`, never auto-loaded), replacing the commented-out `deploy:` block that used to live in `docker-compose.yml` itself
 - [x] `GLOBAL_CONFIG_PATH` mount now falls back to `/dev/null` (like `GITHUB_TOKEN_FILE`) instead of a real host directory when unset — no more unexplained `./shared-config/` created for a feature nobody opted into
 - [x] `/etc/claude-dock-packages.list`: `dpkg -l` snapshot baked into the image, so an unpinned `apt-get upgrade` build is bisectable after the fact
 - [x] Startup timing + an explicit "ACTION REQUIRED" log block in `entrypoint.sh`/`docker/claude-remote-launch.sh`, persisted to `dock.log`: says which step startup is on, how long each step took, and — when a manual login or remote-control pairing is still pending — the exact `docker exec` command to run, since `docker logs` stops showing readable text the moment `tmux` takes over the tty
-- [x] `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE` safety confirmation `install.sh` already had
 - [x] CI validates `docker-compose.yml` (`docker compose config`, all overlays) and `tests/smoke.sh` now also boots via a real `docker compose up`, and runs an end-to-end disaster-recovery drill through the real `backup.sh`/`restore.sh`
 - [x] `scripts/update.sh` waits for `healthy` (not just `Running`) after updating and automatically rolls back to the previous image if it isn't, instead of leaving a broken container up
 - [x] `CHANGELOG.md`: dated, user-facing log of what changed, linked from the README
+- [x] Removed `CLAUDE_AUTO_APPROVE` — the toggle wasn't actually applying `--dangerously-skip-permissions` reliably in practice, and the same result is available via `CLAUDE_EXTRA_ARGS` (which already supports arbitrary flags) without a second, narrower mechanism to keep in sync with it. Anyone who still wants this must pass `--dangerously-skip-permissions` explicitly through `CLAUDE_EXTRA_ARGS`
 
 ### Possible Future Improvements
 

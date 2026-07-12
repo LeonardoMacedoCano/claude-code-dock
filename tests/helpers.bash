@@ -23,7 +23,6 @@ setup_entrypoint_env() {
   export PATH="$MOCK_BIN:$PATH"
 
   export AUTO_START_MODE="interactive"
-  export CLAUDE_AUTO_APPROVE="true"
   export CLAUDE_EXTRA_ARGS=""
   export REMOTE_SESSION_NAME=""
   export TZ=""

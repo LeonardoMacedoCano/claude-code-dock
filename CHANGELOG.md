@@ -75,11 +75,14 @@ want to know what's actually changing.
   a new `@anthropic-ai/claude-code` release that isn't tied to a
   claude-code-dock commit.
 
-### Fixed
-- `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE=true`
-  safety confirmation `scripts/install.sh` already had — previously, every
-  session started via `new-session.sh` + `session-up.sh` skipped it
-  entirely, no matter how many had auto-approve on with no resource limits.
+### Removed
+- `CLAUDE_AUTO_APPROVE` and all logic built around it (`settings.json`
+  patching, `install.sh`/`session-up.sh`'s resource-limit safety
+  confirmation, `entrypoint.sh`'s startup warning, `status.sh`'s
+  auto-approve row) — it wasn't reliably applying
+  `--dangerously-skip-permissions` in practice, and `CLAUDE_EXTRA_ARGS`
+  already covers passing that flag through explicitly, so there's no need
+  for a second, narrower mechanism to keep in sync with it.
 
 ## Before this file existed
 

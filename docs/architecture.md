@@ -113,7 +113,7 @@ The container supports three modes, controlled by the `AUTO_START_MODE` variable
 
 | Mode | PID 1 | Use |
 |------|-------|-----|
-| `interactive` (default) | `tmux` -> `claude [--dangerously-skip-permissions]` | Interactive terminal via `tmux attach-session` |
+| `interactive` (default) | `tmux` -> `claude` | Interactive terminal via `tmux attach-session` |
 | `remote` | `tmux` -> `claude --remote-control` | Remote Control server for external clients |
 | `shell` | `bash` | Debug and manual inspection |
 
