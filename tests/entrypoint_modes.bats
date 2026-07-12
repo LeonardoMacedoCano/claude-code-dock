@@ -22,44 +22,11 @@ teardown() {
   grep -q "^claude$" "$TEST_TMPDIR/tmux_args"
 }
 
-@test "interactive mode: no --dangerously-skip-permissions when CLAUDE_AUTO_APPROVE is unset (new default)" {
-  unset CLAUDE_AUTO_APPROVE
-  run bash "$ENTRYPOINT"
-  [ "$status" -eq 0 ]
-  [ -f "$TEST_TMPDIR/tmux_args" ]
-  run grep "^--dangerously-skip-permissions$" "$TEST_TMPDIR/tmux_args"
-  [ "$status" -ne 0 ]
-}
-
-@test "interactive mode: --dangerously-skip-permissions when CLAUDE_AUTO_APPROVE=true" {
-  export CLAUDE_AUTO_APPROVE="true"
-  run bash "$ENTRYPOINT"
-  [ "$status" -eq 0 ]
-  grep -q "^--dangerously-skip-permissions$" "$TEST_TMPDIR/tmux_args"
-}
-
-@test "interactive mode: no --dangerously-skip-permissions when CLAUDE_AUTO_APPROVE=false" {
-  export CLAUDE_AUTO_APPROVE="false"
-  run bash "$ENTRYPOINT"
-  [ "$status" -eq 0 ]
-  [ -f "$TEST_TMPDIR/tmux_args" ]
-  run grep "^--dangerously-skip-permissions$" "$TEST_TMPDIR/tmux_args"
-  [ "$status" -ne 0 ]
-}
-
 @test "remote mode: passes --remote-control to claude" {
   export AUTO_START_MODE="remote"
   run bash "$ENTRYPOINT"
   [ "$status" -eq 0 ]
   grep -q "^--remote-control$" "$TEST_TMPDIR/tmux_args"
-}
-
-@test "remote mode: passes --dangerously-skip-permissions when CLAUDE_AUTO_APPROVE=true" {
-  export AUTO_START_MODE="remote"
-  export CLAUDE_AUTO_APPROVE="true"
-  run bash "$ENTRYPOINT"
-  [ "$status" -eq 0 ]
-  grep -q "^--dangerously-skip-permissions$" "$TEST_TMPDIR/tmux_args"
 }
 
 @test "remote mode: REMOTE_SESSION_NAME is appended after --remote-control" {

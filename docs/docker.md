@@ -149,7 +149,6 @@ your own `.env`; use this table when you need to know source/scope precisely.
 | `PUID` / `PGID` | `.env` | UID/GID the container remaps its built-in `node` user to before dropping root (default `1000`/`1000`, a no-op when unset). `0` is rejected |
 | `CONTAINER_NAME` | `.env` | Informational only inside the container — echoed back in `entrypoint.sh`'s startup banner so the printed `docker exec` command matches this container's real name |
 | `AUTO_START_MODE` | `.env` | Execution mode: interactive, remote, shell — validated at startup, invalid values fail fast instead of silently defaulting |
-| `CLAUDE_AUTO_APPROVE` | `.env` | Enables `--dangerously-skip-permissions` (default `false`) |
 | `CLAUDE_EXTRA_ARGS` | `.env` | Extra arguments for Claude — quote-aware parsing, so quoted substrings with spaces survive as one argument |
 | `REMOTE_SESSION_NAME` | `.env` | Session ID — passed into the container; used for the tmux/remote session name and shown in startup logs |
 | `TZ` | `.env` | Timezone |
@@ -303,9 +302,7 @@ guards against) is just an inconvenience.
 
 `docker-compose.yml` sets no CPU/memory ceiling by default — a hardcoded
 value would be wrong for most hosts (a Raspberry Pi and a 32-core Unraid box
-have nothing in common). This matters most when `CLAUDE_AUTO_APPROVE=true`:
-with no per-command human checkpoint, nothing else in this project caps how
-much CPU or memory a single Claude-issued command can consume on this host.
+have nothing in common).
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d
@@ -325,12 +322,6 @@ regenerated or the file gets deleted outright based on `CLAUDE_SOURCE_PATH`
 alone, so anything else placed in it would be silently clobbered on the next
 run of those scripts. A separate, explicitly opted-in file avoids that
 collision entirely.
-
-`./scripts/install.sh` checks whether this file exists on disk when
-`CLAUDE_AUTO_APPROVE=true` and asks for explicit confirmation before
-continuing if it doesn't (`check_auto_approve_safety()`) — see
-[Security: Credential Protection, point 6](security.md#credential-protection)
-for the full risk this is guarding against.
 
 ---
 

@@ -22,7 +22,7 @@ case "$ARGS" in
   *".State.Health"*) echo "no healthcheck"; exit 0 ;;
   *".State.Status"*) echo "running"; exit 0 ;;
   *".State.StartedAt"*) echo "2024-01-01T00:00:00Z"; exit 0 ;;
-  *"Config.Env"*) printf 'AUTO_START_MODE=interactive\nCLAUDE_AUTO_APPROVE=true\n'; exit 0 ;;
+  *"Config.Env"*) printf 'AUTO_START_MODE=interactive\n'; exit 0 ;;
 esac
 if [ "$1" = "exec" ]; then
   cat "${MOCK_VERSION_FILE}" 2>/dev/null
@@ -64,7 +64,7 @@ case "\$ARGS" in
   *".State.Health"*) echo "no healthcheck"; exit 0 ;;
   *".State.Status"*) echo "running"; exit 0 ;;
   *".State.StartedAt"*) echo "2024-01-01T00:00:00Z"; exit 0 ;;
-  *"Config.Env"*) printf 'AUTO_START_MODE=interactive\nCLAUDE_AUTO_APPROVE=true\n'; exit 0 ;;
+  *"Config.Env"*) printf 'AUTO_START_MODE=interactive\n'; exit 0 ;;
 esac
 if [ "\$1" = "exec" ]; then
   case "\$ARGS" in

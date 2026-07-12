@@ -22,7 +22,7 @@ setup() {
   mkdir -p "$TMP_PROJECT/configs/$SESSION"
   mkdir -p "$TMP_PROJECT/backups"
 
-  echo '{"skipDangerousModePermissionPrompt":true}' > "$TMP_PROJECT/configs/$SESSION/settings.json"
+  echo '{"model":"claude-sonnet"}' > "$TMP_PROJECT/configs/$SESSION/settings.json"
 
   printf 'CONFIG_BASE_PATH=./configs\nREMOTE_SESSION_NAME=%s\n' "$SESSION" > "$TMP_PROJECT/.env"
 
@@ -149,7 +149,7 @@ _create_old_backups() {
 @test "process-exported CONFIG_BASE_PATH/REMOTE_SESSION_NAME are honored even without a matching .env file" {
   rm -f "$TMP_PROJECT/.env"
   mkdir -p "$TMP_PROJECT/other-configs/$SESSION"
-  echo '{"skipDangerousModePermissionPrompt":true}' > "$TMP_PROJECT/other-configs/$SESSION/settings.json"
+  echo '{"model":"claude-sonnet"}' > "$TMP_PROJECT/other-configs/$SESSION/settings.json"
 
   export CONFIG_BASE_PATH="$TMP_PROJECT/other-configs"
   export REMOTE_SESSION_NAME="$SESSION"

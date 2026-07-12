@@ -234,10 +234,6 @@ print_banner
 
 log_step "Startup configuration:"
 log_info "Execution mode:    ${BOLD}${AUTO_START_MODE:-interactive}${RESET}"
-log_info "Auto-approve:      ${BOLD}${CLAUDE_AUTO_APPROVE:-false}${RESET}"
-if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
-    log_warn "CLAUDE_AUTO_APPROVE=true: Claude runs commands with no per-command confirmation. Set a CPU/memory ceiling via docker-compose.resources.yml if this host has no other cap on it. See docs/security.md#credential-protection."
-fi
 log_info "Running as:        ${BOLD}$(id -un 2>/dev/null || echo node) (uid=${PUID:-1000}, gid=${PGID:-1000})${RESET}"
 if [ -n "${REMOTE_SESSION_NAME:-}" ]; then
     log_info "Session ID:        ${BOLD}${REMOTE_SESSION_NAME}${RESET}"
@@ -358,22 +354,6 @@ if [ -n "${GIT_REPO_URL:-}" ]; then
     fi
 fi
 
-if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
-    SETTINGS_FILE="${HOME}/.claude/settings.json"
-    if [ -f "${SETTINGS_FILE}" ]; then
-        if command -v jq &>/dev/null; then
-            UPDATED=$(jq '. + {"skipDangerousModePermissionPrompt": true}' "${SETTINGS_FILE}" 2>/dev/null)
-            if [ -n "${UPDATED}" ]; then
-                echo "${UPDATED}" > "${SETTINGS_FILE}"
-                log_info "skipDangerousModePermissionPrompt enabled in settings.json"
-            fi
-        fi
-    else
-        echo '{"skipDangerousModePermissionPrompt":true}' > "${SETTINGS_FILE}"
-        log_info "settings.json created with skipDangerousModePermissionPrompt=true"
-    fi
-fi
-
 GLOBAL_DIR="${HOME}/.claude-global"
 
 if [ -f "${GLOBAL_DIR}/CLAUDE.md" ]; then
@@ -437,9 +417,6 @@ CMD_ARGS=()
 
 case "${MODE}" in
     remote)
-        if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
-            CMD_ARGS+=("--dangerously-skip-permissions")
-        fi
         # --continue reconnects to the Remote Control session recorded in the
         # most recent /workspace conversation instead of registering a brand
         # new one — without it, every container restart piles up another
@@ -459,9 +436,6 @@ case "${MODE}" in
         CMD_BIN="bash"
         ;;
     interactive|*)
-        if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
-            CMD_ARGS+=("--dangerously-skip-permissions")
-        fi
         ;;
 esac
 

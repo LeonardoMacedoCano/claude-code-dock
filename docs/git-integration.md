@@ -16,7 +16,7 @@ push` fails (public repos and read-only clones still work).
 
 **Setup:**
 1. Create a token — prefer a **fine-grained token** scoped to only the repo(s) this session needs: [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens) → **Generate new token** → **Repository access: Only select repositories** → pick the repo(s) → under **Repository permissions**, grant **Contents: Read and write** (add **Pull requests: Read and write** if Claude will also open PRs) → generate and copy.
-   A classic token ([github.com/settings/tokens](https://github.com/settings/tokens) → scope `repo`) also works, but grants push access to *every* repo on the account — only use it if you specifically need that breadth. This distinction matters most when `CLAUDE_AUTO_APPROVE=true` (see [Security](security.md#credential-protection), point 6): a leaked token is only as bounded as its own scope.
+   A classic token ([github.com/settings/tokens](https://github.com/settings/tokens) → scope `repo`) also works, but grants push access to *every* repo on the account — only use it if you specifically need that breadth. A leaked token is only as bounded as its own scope (see [Security](security.md#credential-protection)).
 2. Save it to a file **on the host** (not in `.env`):
    ```bash
    mkdir -p /srv/claude-secrets

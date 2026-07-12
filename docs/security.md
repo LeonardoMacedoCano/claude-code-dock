@@ -86,12 +86,12 @@ The GitHub token specifically avoids this: `GITHUB_TOKEN_FILE` in `.env` holds a
 
 **6. The most realistic exfiltration path is the agent itself, not an external attacker.**
 
-The token flows into `~/.git-credentials` in plaintext (`chmod 600`, but plaintext) so `git push`/`git pull` work non-interactively (see `entrypoint.sh`). That file lives in the same filesystem namespace Claude Code operates in. If `CLAUDE_AUTO_APPROVE=true` (`--dangerously-skip-permissions`) is set, Claude executes shell commands without per-action confirmation — including, hypothetically, commands suggested by content it reads, such as instructions embedded in a file inside a cloned/untrusted repository (a prompt-injection scenario). In that scenario the attacker doesn't need to compromise the container or the Docker daemon at all: the agent itself is the one with read access to the token, and auto-approve removes the human checkpoint that would normally catch an unexpected `curl` or `cat ~/.git-credentials` in a proposed command.
+The token flows into `~/.git-credentials` in plaintext (`chmod 600`, but plaintext) so `git push`/`git pull` work non-interactively (see `entrypoint.sh`). That file lives in the same filesystem namespace Claude Code operates in. If you pass `--dangerously-skip-permissions` (e.g. via `CLAUDE_EXTRA_ARGS`), Claude executes shell commands without per-action confirmation — including, hypothetically, commands suggested by content it reads, such as instructions embedded in a file inside a cloned/untrusted repository (a prompt-injection scenario). In that scenario the attacker doesn't need to compromise the container or the Docker daemon at all: the agent itself is the one with read access to the token, and skipping permissions removes the human checkpoint that would normally catch an unexpected `curl` or `cat ~/.git-credentials` in a proposed command.
 
-This is not a bug in claude-code-dock — it's a consequence of combining "credentials readable by the workspace process" (required for git push/pull to work at all) with "no human reviews each command" (what `CLAUDE_AUTO_APPROVE` explicitly opts into). It does mean the two should be considered together, not independently:
+This is not a bug in claude-code-dock — it's a consequence of combining "credentials readable by the workspace process" (required for git push/pull to work at all) with "no human reviews each command" (what `--dangerously-skip-permissions` opts into). It does mean the two should be considered together, not independently:
 
-- Treat `CLAUDE_AUTO_APPROVE=true` as appropriate only for workspaces/repositories you trust the *content* of, not just the host environment — a malicious `README.md` or issue comment in a repo you clone is enough to act as the attack's entry point.
-- If you routinely point this container at repositories you don't fully trust (forks, third-party PRs, scratch clones), prefer `CLAUDE_AUTO_APPROVE=false` for that session, or use a `GITHUB_TOKEN_FILE` pointing at a token scoped to the narrowest possible repo/permission set (fine-grained PAT, single repo, no admin scopes) so a leak is bounded.
+- Treat `--dangerously-skip-permissions` as appropriate only for workspaces/repositories you trust the *content* of, not just the host environment — a malicious `README.md` or issue comment in a repo you clone is enough to act as the attack's entry point.
+- If you routinely point this container at repositories you don't fully trust (forks, third-party PRs, scratch clones), don't pass `--dangerously-skip-permissions` for that session, or use a `GITHUB_TOKEN_FILE` pointing at a token scoped to the narrowest possible repo/permission set (fine-grained PAT, single repo, no admin scopes) so a leak is bounded.
 - A leaked token is revocable and bounded in blast radius if scoped narrowly; a leaked token with broad `repo` scope across your whole account is not.
 
 ---
@@ -300,8 +300,8 @@ trivy image claude-code-dock_claude-code-dock
 [ ] The server is not directly exposed to the internet
 [ ] VPN configured for external access (if needed)
 [ ] Container runs as node user (not root) -- verify with: docker exec claude-code-dock whoami
-[ ] CLAUDE_AUTO_APPROVE is false unless you've deliberately decided to trust this workspace
 [ ] Anyone with `docker` access to this host is treated as trusted (env vars are readable via docker inspect/exec; the mounted GITHUB_TOKEN_FILE content is readable via docker exec)
-[ ] If CLAUDE_AUTO_APPROVE=true, the token behind GITHUB_TOKEN_FILE is scoped as narrowly as possible (fine-grained PAT, single repo) -- with auto-approve on, the agent itself (not just the host) can read ~/.git-credentials
-[ ] If CLAUDE_AUTO_APPROVE=true, resource limits are set (size docker-compose.resources.yml and run with `-f docker-compose.yml -f docker-compose.resources.yml`) -- with no per-command confirmation, nothing else caps how much CPU/memory a single command can consume
+[ ] --dangerously-skip-permissions is not set via CLAUDE_EXTRA_ARGS unless you've deliberately decided to trust this workspace
+[ ] If --dangerously-skip-permissions is set, the token behind GITHUB_TOKEN_FILE is scoped as narrowly as possible (fine-grained PAT, single repo) -- with no per-command confirmation, the agent itself (not just the host) can read ~/.git-credentials
+[ ] If --dangerously-skip-permissions is set, resource limits are set (size docker-compose.resources.yml and run with `-f docker-compose.yml -f docker-compose.resources.yml`) -- with no per-command confirmation, nothing else caps how much CPU/memory a single command can consume
 ```
