@@ -111,3 +111,40 @@ _latest_archive() {
   CURRENT_CONTENT="$(cat "$TMP_PROJECT/configs/$SESSION/settings.json")"
   [ "$CURRENT_CONTENT" = '{"corrupted":"data"}' ]
 }
+
+@test "backup dereferences a SHARED_CREDENTIALS_PATH symlink instead of storing the link itself" {
+  SHARED_DIR="$TEST_TMPDIR/shared-credentials"
+  mkdir -p "$SHARED_DIR"
+  echo '{"token":"real-shared-secret"}' > "$SHARED_DIR/.credentials.json"
+  ln -s "$SHARED_DIR/.credentials.json" "$TMP_PROJECT/configs/$SESSION/.credentials.json"
+
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+  ARCHIVE="$(_latest_archive)"
+  [ -n "$ARCHIVE" ]
+
+  run tar -tvzf "$ARCHIVE"
+  [[ "$output" == *"-rw-"*".credentials.json"* ]]
+  [[ "$output" != *"->"* ]]
+}
+
+@test "restored credentials survive the original shared directory disappearing (disaster recovery)" {
+  SHARED_DIR="$TEST_TMPDIR/shared-credentials"
+  mkdir -p "$SHARED_DIR"
+  echo '{"token":"real-shared-secret"}' > "$SHARED_DIR/.credentials.json"
+  ln -s "$SHARED_DIR/.credentials.json" "$TMP_PROJECT/configs/$SESSION/.credentials.json"
+
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+  ARCHIVE="$(_latest_archive)"
+  [ -n "$ARCHIVE" ]
+
+  rm -rf "$SHARED_DIR"
+  rm -f "$TMP_PROJECT/configs/$SESSION/.credentials.json"
+
+  run bash -c "echo y | bash '$TMP_PROJECT/scripts/restore.sh' '$ARCHIVE'"
+  [ "$status" -eq 0 ]
+
+  [ ! -L "$TMP_PROJECT/configs/$SESSION/.credentials.json" ]
+  grep -q "real-shared-secret" "$TMP_PROJECT/configs/$SESSION/.credentials.json"
+}

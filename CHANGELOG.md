@@ -20,6 +20,11 @@ want to know what's actually changing.
   session's runtime — not just one already present at container start — and
   any later token rotation both write straight through, with no restart
   needed and no risk of a stale copy shadowing a real login.
+  `scripts/backup.sh` dereferences this symlink into a real file before
+  taring `CONFIG_DIR`, so a session's backup archive still contains the
+  actual credential bytes instead of a link `tar` would otherwise store as
+  just a target path — `restore.sh` needed no changes, since the restored
+  archive already has a plain file at the usual path.
   See [docs/docker.md](docs/docker.md#claude-code-dock-volumes).
 - `GLOBAL_CONFIG_PATH` now also links a `skills/` subdirectory into
   `~/.claude/skills/` at startup, mirroring the existing `commands/` handling

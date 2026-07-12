@@ -62,9 +62,13 @@ teardown() {
   grep -q "session-token" "$SHARED_CREDS_FILE"
   grep -q "session-token" "$SESSION_CREDS"
   [[ "$output" == *"Shared credentials: promoted this session's own login into SHARED_CREDENTIALS_PATH"* ]]
+  # The "session linked ... skips first login" message is for the load-from-shared
+  # case only -- it must not also fire right after a promotion, which would
+  # falsely imply this session skipped a login it actually just provided.
+  [[ "$output" != *"session linked to SHARED_CREDENTIALS_PATH"* ]]
 }
 
-@test "an existing session login promotion overwrites a stale shared copy" {
+@test "an existing session login promotion overwrites a stale shared copy and warns about it" {
   echo '{"token":"session-token"}' > "$SESSION_CREDS"
   mkdir -p "$SHARED_CREDS_DIR"
   echo '{"token":"stale-shared-token"}' > "$SHARED_CREDS_FILE"
@@ -77,6 +81,18 @@ teardown() {
   grep -q "session-token" "$SHARED_CREDS_FILE"
   ! grep -q "stale-shared-token" "$SESSION_CREDS"
   [[ "$output" == *"Shared credentials: promoted this session's own login into SHARED_CREDENTIALS_PATH"* ]]
+  [[ "$output" == *"SHARED_CREDENTIALS_PATH already held different credentials"* ]]
+}
+
+@test "promoting identical session/shared credentials does not warn about replacing different content" {
+  echo '{"token":"same-token"}' > "$SESSION_CREDS"
+  mkdir -p "$SHARED_CREDS_DIR"
+  echo '{"token":"same-token"}' > "$SHARED_CREDS_FILE"
+
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" != *"already held different credentials"* ]]
 }
 
 @test "a login performed after startup is written straight into the shared file via the symlink" {
@@ -101,6 +117,23 @@ teardown() {
 
   [[ "$output" == *"SHARED_CREDENTIALS_PATH is not writable"* ]]
   [ ! -L "$SESSION_CREDS" ]
+
+  chmod 755 "$SHARED_CREDS_DIR"
+}
+
+@test "a session already linked recovers a local copy when the shared dir turns unwritable" {
+  mkdir -p "$SHARED_CREDS_DIR"
+  echo '{"token":"already-shared-token"}' > "$SHARED_CREDS_FILE"
+  ln -sf "$SHARED_CREDS_FILE" "$SESSION_CREDS"
+  chmod 555 "$SHARED_CREDS_DIR"
+
+  run bash "$ENTRYPOINT"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"SHARED_CREDENTIALS_PATH is not writable"* ]]
+  [[ "$output" == *"Recovered a local copy of this session's credentials"* ]]
+  [ ! -L "$SESSION_CREDS" ]
+  grep -q "already-shared-token" "$SESSION_CREDS"
 
   chmod 755 "$SHARED_CREDS_DIR"
 }
