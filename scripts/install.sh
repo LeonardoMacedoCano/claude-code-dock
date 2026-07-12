@@ -271,11 +271,12 @@ check_env() {
     ok "Session config dir: ${CONFIG_DIR}"
     fix_ownership "${CONFIG_DIR}"
 
-    if [ -n "${SHARED_CONFIG_PATH:-}" ]; then
-        mkdir -p "${SHARED_CONFIG_PATH}"
-        mkdir -p "${SHARED_CONFIG_PATH}/commands"
-        ok "SHARED_CONFIG_PATH: ${SHARED_CONFIG_PATH}"
-        fix_ownership "${SHARED_CONFIG_PATH}"
+    if [ -n "${GLOBAL_CONFIG_PATH:-}" ]; then
+        mkdir -p "${GLOBAL_CONFIG_PATH}"
+        mkdir -p "${GLOBAL_CONFIG_PATH}/commands"
+        mkdir -p "${GLOBAL_CONFIG_PATH}/skills"
+        ok "GLOBAL_CONFIG_PATH: ${GLOBAL_CONFIG_PATH}"
+        fix_ownership "${GLOBAL_CONFIG_PATH}"
     fi
 
     if [ -n "${CLAUDE_SOURCE_PATH:-}" ]; then

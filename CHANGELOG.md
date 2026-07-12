@@ -10,6 +10,20 @@ want to know what's actually changing.
 ## Unreleased
 
 ### Added
+- `GLOBAL_CONFIG_PATH` now also links a `skills/` subdirectory into
+  `~/.claude/skills/` at startup, mirroring the existing `commands/` handling
+  (one symlink per skill directory, no merge step — same idiom `CLAUDE.md`'s
+  merge-with-`CLAUDE-local.md` doesn't need since there's nothing to combine).
+
+### Changed
+- **Breaking:** `SHARED_CONFIG_PATH` renamed to `GLOBAL_CONFIG_PATH` (mount
+  target inside the container also renamed, from `~/.claude-shared` to
+  `~/.claude-global`). "Shared" didn't distinguish this mount from every
+  other bind mount in the project, which are all shared between host and
+  container by definition — "global" matches the actual meaning (applied to
+  every session) and Claude Code's own user-level-vs-project-level `CLAUDE.md`
+  vocabulary. If you already set `SHARED_CONFIG_PATH` in `.env`, rename it to
+  `GLOBAL_CONFIG_PATH` before updating.
 - `scripts/watchdog.sh` now auto-discovers every `claude-code-dock*`
   container on the host (same filter `scripts/sessions.sh` uses) when run
   with no container name and no `CONTAINER_NAME` already set in its process

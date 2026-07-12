@@ -39,7 +39,7 @@ BATS_FILES=(
   "$SCRIPT_DIR/entrypoint_validation.bats"
   "$SCRIPT_DIR/entrypoint_symlink.bats"
   "$SCRIPT_DIR/entrypoint_settings.bats"
-  "$SCRIPT_DIR/entrypoint_shared_config.bats"
+  "$SCRIPT_DIR/entrypoint_global_config.bats"
   "$SCRIPT_DIR/entrypoint_github_token.bats"
   "$SCRIPT_DIR/entrypoint_puid_pgid.bats"
   "$SCRIPT_DIR/backup_retention.bats"

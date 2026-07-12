@@ -123,7 +123,7 @@ _create_old_backups() {
 }
 
 @test "excludes secret-looking variables (CREDENTIAL/AUTH/CERT) while preserving *_PATH vars from .env backup" {
-  printf 'SOME_CREDENTIAL=abc123\nSOME_AUTH_HEADER=bearer-xyz\nSOME_CERT_DATA=----BEGIN\nWORKSPACE_PATH=/mnt/user/projects\nCONFIG_BASE_PATH=./configs\nSHARED_CONFIG_PATH=./shared\nREMOTE_SESSION_NAME=%s\n' "$SESSION" > "$TMP_PROJECT/.env"
+  printf 'SOME_CREDENTIAL=abc123\nSOME_AUTH_HEADER=bearer-xyz\nSOME_CERT_DATA=----BEGIN\nWORKSPACE_PATH=/mnt/user/projects\nCONFIG_BASE_PATH=./configs\nGLOBAL_CONFIG_PATH=./global\nREMOTE_SESSION_NAME=%s\n' "$SESSION" > "$TMP_PROJECT/.env"
 
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
@@ -142,7 +142,7 @@ _create_old_backups() {
   # because it collides with this exact suffix (see backup.sh comment).
   grep -q "^WORKSPACE_PATH=/mnt/user/projects$" "$EXTRACT_DIR/.env.backup"
   grep -q "^CONFIG_BASE_PATH=./configs$" "$EXTRACT_DIR/.env.backup"
-  grep -q "^SHARED_CONFIG_PATH=./shared$" "$EXTRACT_DIR/.env.backup"
+  grep -q "^GLOBAL_CONFIG_PATH=./global$" "$EXTRACT_DIR/.env.backup"
   rm -rf "$EXTRACT_DIR"
 }
 

@@ -374,42 +374,53 @@ if [ "${CLAUDE_AUTO_APPROVE:-false}" = "true" ]; then
     fi
 fi
 
-SHARED_DIR="${HOME}/.claude-shared"
+GLOBAL_DIR="${HOME}/.claude-global"
 
-if [ -f "${SHARED_DIR}/CLAUDE.md" ]; then
-    SHARED_MERGE_T0=$(date +%s)
-    log_step "Applying shared configuration..."
+if [ -f "${GLOBAL_DIR}/CLAUDE.md" ]; then
+    GLOBAL_MERGE_T0=$(date +%s)
+    log_step "Applying global configuration..."
 
     LOCAL_MD="${HOME}/.claude/CLAUDE-local.md"
     GENERATED_MD="${HOME}/.claude/CLAUDE.md"
 
     if [ ! -f "${LOCAL_MD}" ] && [ -f "${GENERATED_MD}" ]; then
-        if ! grep -q "^# SHARED CONFIG" "${GENERATED_MD}" 2>/dev/null; then
+        if ! grep -q "^# GLOBAL CONFIG" "${GENERATED_MD}" 2>/dev/null; then
             mv "${GENERATED_MD}" "${LOCAL_MD}"
             log_info "Existing CLAUDE.md preserved as CLAUDE-local.md"
         fi
     fi
 
     {
-        printf "# SHARED CONFIG — auto-generated at startup, do not edit\n\n"
-        cat "${SHARED_DIR}/CLAUDE.md"
+        printf "# GLOBAL CONFIG — auto-generated at startup, do not edit\n\n"
+        cat "${GLOBAL_DIR}/CLAUDE.md"
         if [ -f "${LOCAL_MD}" ]; then
             printf "\n---\n\n"
             cat "${LOCAL_MD}"
         fi
     } > "${GENERATED_MD}"
 
-    log_info "Shared CLAUDE.md applied (in $(( $(date +%s) - SHARED_MERGE_T0 ))s)"
+    log_info "Global CLAUDE.md applied (in $(( $(date +%s) - GLOBAL_MERGE_T0 ))s)"
 fi
 
-if [ -d "${SHARED_DIR}/commands" ]; then
-    SHARED_CMDS=$(find "${SHARED_DIR}/commands" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l)
-    if [ "${SHARED_CMDS}" -gt 0 ]; then
+if [ -d "${GLOBAL_DIR}/commands" ]; then
+    GLOBAL_CMDS=$(find "${GLOBAL_DIR}/commands" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l)
+    if [ "${GLOBAL_CMDS}" -gt 0 ]; then
         mkdir -p "${HOME}/.claude/commands"
-        for f in "${SHARED_DIR}/commands/"*.md; do
+        for f in "${GLOBAL_DIR}/commands/"*.md; do
             [ -f "$f" ] && ln -sf "$f" "${HOME}/.claude/commands/$(basename "$f")"
         done
-        log_info "Shared commands: ${BOLD}${SHARED_CMDS} skill(s) linked${RESET}"
+        log_info "Global commands: ${BOLD}${GLOBAL_CMDS} skill(s) linked${RESET}"
+    fi
+fi
+
+if [ -d "${GLOBAL_DIR}/skills" ]; then
+    GLOBAL_SKILLS=$(find "${GLOBAL_DIR}/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+    if [ "${GLOBAL_SKILLS}" -gt 0 ]; then
+        mkdir -p "${HOME}/.claude/skills"
+        for d in "${GLOBAL_DIR}/skills/"*/; do
+            [ -d "$d" ] && ln -sfn "${d%/}" "${HOME}/.claude/skills/$(basename "$d")"
+        done
+        log_info "Global skills: ${BOLD}${GLOBAL_SKILLS} skill(s) linked${RESET}"
     fi
 fi
 

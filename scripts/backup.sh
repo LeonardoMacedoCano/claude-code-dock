@@ -172,7 +172,7 @@ backup_env() {
     # Deliberately NOT included: "PAT" (personal access token). It's a
     # substring of "PATH", and this project's own .env already has three
     # load-bearing, non-secret vars ending in exactly that suffix
-    # (WORKSPACE_PATH, CONFIG_BASE_PATH, SHARED_CONFIG_PATH) -- adding PAT
+    # (WORKSPACE_PATH, CONFIG_BASE_PATH, GLOBAL_CONFIG_PATH) -- adding PAT
     # would silently drop all three from every backup's .env.backup instead
     # of catching the rare *_PAT var. A bespoke PAT-named secret variable
     # still needs to contain TOKEN, KEY, SECRET, or CREDENTIAL to be masked

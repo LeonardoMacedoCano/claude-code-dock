@@ -86,14 +86,14 @@ contributions.
 
 ## Usage Profiles
 
-Every operator of this project falls into one of a small number of profiles, distinguished entirely by which optional `.env` variables they set. Everything below `REMOTE_SESSION_NAME`/`WORKSPACE_PATH`/`CONFIG_BASE_PATH` (required for any profile) is opt-in — nothing about GitHub, extra Claude arguments, PUID/PGID remapping, shared config, or the build source is ever mandatory. Use this section to figure out "which vars actually matter for what I'm trying to do" before touching `.env` or answering a user's question about it. The full per-variable reference stays in [Environment Variables](#environment-variables) below — this section is the "which subset of that table applies to me" index.
+Every operator of this project falls into one of a small number of profiles, distinguished entirely by which optional `.env` variables they set. Everything below `REMOTE_SESSION_NAME`/`WORKSPACE_PATH`/`CONFIG_BASE_PATH` (required for any profile) is opt-in — nothing about GitHub, extra Claude arguments, PUID/PGID remapping, global config, or the build source is ever mandatory. Use this section to figure out "which vars actually matter for what I'm trying to do" before touching `.env` or answering a user's question about it. The full per-variable reference stays in [Environment Variables](#environment-variables) below — this section is the "which subset of that table applies to me" index.
 
 ### Profile 1 — Default: simplest setup, no GitHub
 
 Just wants Claude Code running persistently, reachable from a terminal (`AUTO_START_MODE=interactive`, the default), pointed at a local/NAS workspace. No git integration inside the container at all — the user commits/pushes from their own machine, or doesn't use git in this workspace.
 
 - **Needs:** `REMOTE_SESSION_NAME`, `WORKSPACE_PATH`, `CONFIG_BASE_PATH`.
-- **Leaves unset:** everything under `GIT_*`/`GITHUB_TOKEN_FILE`, `CLAUDE_SOURCE_PATH`, `PUID`/`PGID` (defaults to 1000/1000), `SHARED_CONFIG_PATH`.
+- **Leaves unset:** everything under `GIT_*`/`GITHUB_TOKEN_FILE`, `CLAUDE_SOURCE_PATH`, `PUID`/`PGID` (defaults to 1000/1000), `GLOBAL_CONFIG_PATH`.
 - **Image source:** pulls the prebuilt image (registry/repo hardcoded in `docker-compose.yml`; `CLAUDE_DOCK_TAG` selects the tag, default `latest`) — no local build.
 - **Enforced by:** `validate_config()` in `entrypoint.sh` only checks `AUTO_START_MODE` + writable config/workspace dirs; `check_env()` in `install.sh` hard-`fail`s only on missing `REMOTE_SESSION_NAME`/`WORKSPACE_PATH`/`CONFIG_BASE_PATH`. Nothing about git is ever validated for this profile because nothing about git is set.
 
@@ -135,7 +135,7 @@ Not just running the project — modifying claude-code-dock itself and needs the
 | `--dangerously-skip-permissions` | `CLAUDE_AUTO_APPROVE=true` | Applied via `settings.json`; defaults to `false` |
 | Extra Claude CLI flags | `CLAUDE_EXTRA_ARGS` | Silent no-op when unset; malformed quoting warns and falls back to plain splitting; parsed via `xargs`, not `eval` — no shell expansion |
 | Remap container user off UID/GID 1000 | `PUID`/`PGID` | Validated — `0` or non-integer is `fatal()` |
-| Shared `CLAUDE.md`/commands across sessions | `SHARED_CONFIG_PATH` | Silent no-op when unset |
+| Global `CLAUDE.md`/`commands/`/`skills/` across sessions | `GLOBAL_CONFIG_PATH` | Silent no-op when unset |
 | Build from local clone instead of pulling | `CLAUDE_SOURCE_PATH` | Not validated by the container itself; `install.sh`/`update.sh`/`session-up.sh` generate `docker-compose.override.yml` to enforce it — a manual `docker compose up -d` run from the same directory picks that up too, once one of the scripts has generated it at least once |
 | Pin the pulled image tag | `CLAUDE_DOCK_TAG` | Silent no-op when unset (falls back to `:latest`); ignored entirely if `CLAUDE_SOURCE_PATH` is set |
 | Backup retention beyond the last 10 | `BACKUP_RETENTION` | Silent no-op when unset (defaults to 10) |
@@ -295,10 +295,14 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
 - **Three volumes:** `WORKSPACE_PATH:/workspace`,
   `CONFIG_BASE_PATH/REMOTE_SESSION_NAME:/home/node/.claude` (per-session
   Claude Code credentials — without it, every restart needs a fresh login),
-  and optionally `SHARED_CONFIG_PATH:/home/node/.claude-shared:ro` (global
-  `CLAUDE.md`/`commands/` merged into every session at startup, with
+  and optionally `GLOBAL_CONFIG_PATH:/home/node/.claude-global:ro` (global
+  `CLAUDE.md`/`commands/`/`skills/` merged into every session at startup, with
   instance-specific overrides in `CONFIG_BASE_PATH/<session>/CLAUDE-local.md`).
-  `SHARED_CONFIG_PATH` uses the same optional-file-mount idiom as
+  `commands/*.md` and `skills/*/` are symlinked as-is into
+  `~/.claude/commands/` and `~/.claude/skills/` respectively (one symlink per
+  file/directory, not a merge — there's nothing to merge, unlike `CLAUDE.md`);
+  only `CLAUDE.md` goes through the merge-with-`CLAUDE-local.md` step above.
+  `GLOBAL_CONFIG_PATH` uses the same optional-file-mount idiom as
   `GITHUB_TOKEN_FILE` (falls back to `/dev/null` rather than a real host
   directory when unset) — see [`docker-compose.yml`](#docker-composeyml)
   below for why that matters.
@@ -330,7 +334,7 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
 | `WORKSPACE_PATH` | `./workspaces` | Path to projects on the host |
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories |
 | `REMOTE_SESSION_NAME` | `` | **Required.** Unique session ID — isolates config, names backups, prevents duplicate containers |
-| `SHARED_CONFIG_PATH` | `` | Optional shared dir with global `CLAUDE.md` and `commands/` applied to all sessions. Unset falls back to `/dev/null` in `docker-compose.yml`'s mount (not a real host directory), so leaving this unset creates nothing on the host |
+| `GLOBAL_CONFIG_PATH` | `` | Optional global dir with global `CLAUDE.md`, `commands/`, and `skills/` applied to all sessions. Unset falls back to `/dev/null` in `docker-compose.yml`'s mount (not a real host directory), so leaving this unset creates nothing on the host |
 | `TZ` | `UTC` | Timezone |
 | `GIT_USER_NAME` | `` | Name for git commits |
 | `GIT_USER_EMAIL` | `` | Email for git commits |
@@ -372,7 +376,7 @@ Full step-by-step sequence diagram: [docs/architecture.md — Container
 Startup](docs/architecture.md#container-startup). Order, in one line: root
 step-down (see Architecture above) → banner/config display → `claude` binary
 check → `validate_config()` (mode + writable config/workspace dirs, `fatal()`
-on failure) → git config → `settings.json` → `SHARED_CONFIG_PATH` merge →
+on failure) → git config → `settings.json` → `GLOBAL_CONFIG_PATH` merge →
 `cd /workspace` → build `CMD_ARGS` → `exec tmux new-session -s main
 <LAUNCH_BIN> [CMD_ARGS...]` (or `exec bash` in shell mode). `entrypoint.sh`
 must always end on that final `exec` — never a plain call, which would leave
@@ -418,7 +422,7 @@ must always end on that final `exec` — never a plain call, which would leave
 - `- CONTAINER_NAME=${CONTAINER_NAME:-claude-code-dock}` in `environment:`: informational only, mirrors the literal above so `entrypoint.sh`'s startup banner can print the actual `docker exec` command for this container instead of a hardcoded name that's wrong whenever `CONTAINER_NAME` is set to anything else.
 - `image: ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest}` + `build:`: both present intentionally — `image:` is the default pull path, `build:` is the fallback used when `CLAUDE_SOURCE_PATH` is set. `build.args` also passes `CLAUDE_DOCK_SOURCE_PATH`/`CLAUDE_DOCK_VERSION` through so the Dockerfile can bake which one was used into `/etc/claude-dock-build-source` — read by `entrypoint.sh`'s startup log and `scripts/status.sh`. Full rationale for why both fields coexist, and why a bare `docker compose up -d` needs `docker-compose.override.yml` to actually rebuild from `CLAUDE_SOURCE_PATH`: [docs/architecture.md — Design Decisions](docs/architecture.md#design-decisions).
 - `- ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro` in `volumes:`: the "optional file mount" idiom — mounts the real host token file when `.env`'s `GITHUB_TOKEN_FILE` is set, or a harmless empty `/dev/null` when it's not, so this line is always present and always safe regardless of whether the operator configured a token. Paired with `- GITHUB_TOKEN_FILE=/run/secrets/github_token` in `environment:`, which is a **literal**, not `${GITHUB_TOKEN_FILE:-}` — the container always looks at this fixed convention path; the host-side `.env` value is only ever used for the volume mount source, never passed into the container directly.
-- `- ${SHARED_CONFIG_PATH:-/dev/null}:/home/node/.claude-shared:ro` in `volumes:`: same optional-file-mount idiom as `GITHUB_TOKEN_FILE` above — falls back to `/dev/null` rather than a real host directory when unset, so the feature never leaves behind an unexplained root-owned directory nobody opted into.
+- `- ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro` in `volumes:`: same optional-file-mount idiom as `GITHUB_TOKEN_FILE` above — falls back to `/dev/null` rather than a real host directory when unset, so the feature never leaves behind an unexplained root-owned directory nobody opted into.
 - Resource limits (CPU/memory) are **not** in this file — they live in the opt-in `docker-compose.resources.yml` overlay (explicit `-f`, never auto-loaded), both because `docker-compose.override.yml` is already scripts-managed for `CLAUDE_SOURCE_PATH` and would silently clobber anything else placed in it, and because a hardcoded limit here would be wrong for most hosts. See that file's header comment and `scripts/install.sh`'s `check_auto_approve_safety()`.
 - `- PUID=${PUID:-1000}` / `- PGID=${PGID:-1000}` in `environment:`: read by `entrypoint.sh`'s root step-down block to remap the `node` account before dropping privilege. No corresponding `user:` field is set on the service — the container must start as root (the image's default, see the `Dockerfile` section) for that remap to be possible at all.
 
@@ -544,7 +548,7 @@ config/workspace dirs; fatal() holds on sleep infinity instead of exiting)
 
 **Retention:** Automatically keeps only the 10 most recent backups.
 
-**`.env` masking (`backup_env()`):** two passes. First excludes any line whose *variable name* looks like a secret (`…TOKEN…`, `…KEY…`, `…SECRET…`, `…PASSWORD…`, `…PASSPHRASE…`, `…CREDENTIAL…`, `…AUTH…`, `…CERT…`). Second excludes any line whose *value* is a URL with credentials embedded (`user:pass@host` — e.g. someone setting `GIT_REPO_URL=https://user:ghp_xxx@github.com/...` instead of the recommended separate `GITHUB_TOKEN_FILE`), which the name-based pass alone would miss since `GIT_REPO_URL` doesn't look like a secret-named variable. This is a denylist, not an allowlist — best-effort, not a guarantee; a secret in an unrecognized variable name would slip through. Deliberately excludes `PAT`: it's a substring of `PATH`, and this project already has three load-bearing non-secret vars ending in exactly that suffix (`WORKSPACE_PATH`, `CONFIG_BASE_PATH`, `SHARED_CONFIG_PATH`) that adding it would silently strip from every backup.
+**`.env` masking (`backup_env()`):** two passes. First excludes any line whose *variable name* looks like a secret (`…TOKEN…`, `…KEY…`, `…SECRET…`, `…PASSWORD…`, `…PASSPHRASE…`, `…CREDENTIAL…`, `…AUTH…`, `…CERT…`). Second excludes any line whose *value* is a URL with credentials embedded (`user:pass@host` — e.g. someone setting `GIT_REPO_URL=https://user:ghp_xxx@github.com/...` instead of the recommended separate `GITHUB_TOKEN_FILE`), which the name-based pass alone would miss since `GIT_REPO_URL` doesn't look like a secret-named variable. This is a denylist, not an allowlist — best-effort, not a guarantee; a secret in an unrecognized variable name would slip through. Deliberately excludes `PAT`: it's a substring of `PATH`, and this project already has three load-bearing non-secret vars ending in exactly that suffix (`WORKSPACE_PATH`, `CONFIG_BASE_PATH`, `GLOBAL_CONFIG_PATH`) that adding it would silently strip from every backup.
 
 **Unencrypted-credentials warning:** `print_result()` tracks whether the archive included `CONFIG_DIR` (`BACKUP_HAS_CONFIG`, set in `create_backup_archive()`) and, when it did, prints an explicit note that the `.tar.gz` contains plaintext Claude Code session credentials — the default (and only) path produces exactly that file, silently, so treat the archive as sensitive and store it somewhere access-controlled.
 
@@ -792,12 +796,14 @@ Architecture above), no host-level privilege needed at all.
 - [x] Optional watchdog notification hook (`WATCHDOG_NTFY_URL`)
 - [x] Opt-in `:stable` image tag, promoted manually, independent of `:latest`
 - [x] Removed the scheduled/cron rebuild trigger from `docker-publish.yml` — `:latest` now only rebuilds on a push to `main` or an explicit `workflow_dispatch` run, never unattended on a timer
+- [x] `GLOBAL_CONFIG_PATH` also links a `skills/` subdirectory into `~/.claude/skills/` at startup, same idiom as the existing `commands/` handling
+- [x] Renamed `SHARED_CONFIG_PATH` to `GLOBAL_CONFIG_PATH` (and its mount target from `.claude-shared` to `.claude-global`) — "shared" didn't distinguish it from every other bind mount in this project, which are all host/container-shared; "global" matches Claude Code's own user-level-vs-project-level `CLAUDE.md` vocabulary. Breaking change for anyone with the old variable name already in `.env`
 - [x] CI smoke test (`tests/smoke.sh`): builds the image and boots a real container per `AUTO_START_MODE`, gating `docker-publish.yml`'s publish job on Docker's own `HEALTHCHECK` actually going `healthy` — the mocked `bats` suite alone never exercised a real container
 - [x] `scripts/install.sh --with-watchdog`: one-flag host crontab setup for `scripts/watchdog.sh`, idempotent
 - [x] `CLAUDE_AUTO_APPROVE=true` without resource limits now requires explicit confirmation in `install.sh`, and is logged as a warning by `entrypoint.sh` on every start regardless of how the container was brought up
 - [x] `scripts/backup.sh` warns explicitly that every archive contains plaintext credentials
 - [x] `docker-compose.resources.yml`: opt-in CPU/memory limit overlay (explicit `-f`, never auto-loaded), replacing the commented-out `deploy:` block that used to live in `docker-compose.yml` itself
-- [x] `SHARED_CONFIG_PATH` mount now falls back to `/dev/null` (like `GITHUB_TOKEN_FILE`) instead of a real host directory when unset — no more unexplained `./shared-config/` created for a feature nobody opted into
+- [x] `GLOBAL_CONFIG_PATH` mount now falls back to `/dev/null` (like `GITHUB_TOKEN_FILE`) instead of a real host directory when unset — no more unexplained `./shared-config/` created for a feature nobody opted into
 - [x] `/etc/claude-dock-packages.list`: `dpkg -l` snapshot baked into the image, so an unpinned `apt-get upgrade` build is bisectable after the fact
 - [x] Startup timing + an explicit "ACTION REQUIRED" log block in `entrypoint.sh`/`docker/claude-remote-launch.sh`, persisted to `dock.log`: says which step startup is on, how long each step took, and — when a manual login or remote-control pairing is still pending — the exact `docker exec` command to run, since `docker logs` stops showing readable text the moment `tmux` takes over the tty
 - [x] `scripts/session-up.sh` now runs the same `CLAUDE_AUTO_APPROVE` safety confirmation `install.sh` already had

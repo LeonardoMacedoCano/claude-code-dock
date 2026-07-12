@@ -51,15 +51,15 @@ services:
       - ${WORKSPACE_PATH:-./workspaces}:/workspace
       - ${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}:/home/node/.claude
       # Optional file mount, same idiom as GITHUB_TOKEN_FILE below: falls back
-      # to /dev/null rather than a real host directory (e.g. ./shared-config)
-      # when SHARED_CONFIG_PATH is unset, so an unused feature doesn't leave
+      # to /dev/null rather than a real host directory (e.g. ./global-config)
+      # when GLOBAL_CONFIG_PATH is unset, so an unused feature doesn't leave
       # behind an auto-created, root-owned host directory nobody asked for.
-      # entrypoint.sh only ever does `[ -f "$SHARED_DIR"/CLAUDE.md ]` / `[ -d
-      # "$SHARED_DIR"/commands ]` against this path -- both simply evaluate
+      # entrypoint.sh only ever does `[ -f "$GLOBAL_DIR"/CLAUDE.md ]` / `[ -d
+      # "$GLOBAL_DIR"/commands ]` against this path -- both simply evaluate
       # false when the mount target is /dev/null instead of a real directory,
       # so this degrades to the same silent no-op as leaving it unmounted.
       # See CLAUDE.md#docker-composeyml.
-      - ${SHARED_CONFIG_PATH:-/dev/null}:/home/node/.claude-shared:ro
+      - ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro
       # Optional file mount: real token file if GITHUB_TOKEN_FILE is set in
       # .env, harmless /dev/null otherwise. See CLAUDE.md#docker-composeyml.
       - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro

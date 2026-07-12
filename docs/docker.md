@@ -104,13 +104,13 @@ The project uses four volumes:
 volumes:
   - ${WORKSPACE_PATH}:/workspace                                     # User projects
   - ${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}:/home/node/.claude     # Claude Code credentials (per-session)
-  - ${SHARED_CONFIG_PATH:-/dev/null}:/home/node/.claude-shared:ro     # Optional: global CLAUDE.md/commands (or /dev/null, a no-op)
+  - ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro     # Optional: global CLAUDE.md/commands/skills (or /dev/null, a no-op)
   - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro      # Optional: GitHub PAT file (or /dev/null, a no-op)
 ```
 
 **Important note:** The config volume mounts to `/home/node/.claude` (not `/root/.claude`), because the actual Claude Code process runs as the `node` user (UID/GID 1000 by default, non-root — set `PUID`/`PGID` in `.env` if your host user differs). It must be writable by that UID on the host — if `CONFIG_BASE_PATH` is unset it silently falls back to `./configs`, and Docker will auto-create that as root-owned on a brand-new session's first start. If that happens, the entrypoint rejects the unwritable directory at startup (see [Container restart loop](#container-restart-loop) below) instead of crash-looping silently — fix it with a one-time `chown -R <PUID>:<PGID> <CONFIG_BASE_PATH>/<REMOTE_SESSION_NAME>` on the host, or let `./scripts/new-session.sh`/`install.sh` create the directory for you up front with the right ownership.
 
-**On the `GITHUB_TOKEN_FILE` and `SHARED_CONFIG_PATH` mounts:** unlike the other two, these are designed to always be present in the `volumes:` list, configured or not — `${VAR:-/dev/null}` is a standard Compose idiom for an "optional file mount": when the corresponding `.env` variable is unset, Compose mounts `/dev/null` instead (reads as empty, harmless). This matters more than it sounds for `SHARED_CONFIG_PATH` specifically: an earlier version of this line fell back to a real directory (`./shared-config`) instead, which Docker auto-created (root-owned) on the host even for operators who never touched the `SHARED_CONFIG_PATH` feature at all. `entrypoint.sh` only ever does `[ -f ... ]`/`[ -d ... ]` checks against the mounted path, both of which simply evaluate false when the target is `/dev/null` instead of a directory — same silent no-op as not mounting it. If you *do* set `GITHUB_TOKEN_FILE` to a host path, make sure the file actually exists there first — Docker auto-creates an empty **directory** at the mount target when the host source is missing, and `entrypoint.sh` detects and warns about that specific case (it can't read a directory as a token).
+**On the `GITHUB_TOKEN_FILE` and `GLOBAL_CONFIG_PATH` mounts:** unlike the other two, these are designed to always be present in the `volumes:` list, configured or not — `${VAR:-/dev/null}` is a standard Compose idiom for an "optional file mount": when the corresponding `.env` variable is unset, Compose mounts `/dev/null` instead (reads as empty, harmless). This matters more than it sounds for `GLOBAL_CONFIG_PATH` specifically: an earlier version of this line fell back to a real directory (`./shared-config`, since renamed to `GLOBAL_CONFIG_PATH`) instead, which Docker auto-created (root-owned) on the host even for operators who never touched the `GLOBAL_CONFIG_PATH` feature at all. `entrypoint.sh` only ever does `[ -f ... ]`/`[ -d ... ]` checks against the mounted path, both of which simply evaluate false when the target is `/dev/null` instead of a directory — same silent no-op as not mounting it. If you *do* set `GITHUB_TOKEN_FILE` to a host path, make sure the file actually exists there first — Docker auto-creates an empty **directory** at the mount target when the host source is missing, and `entrypoint.sh` detects and warns about that specific case (it can't read a directory as a token).
 
 ### Inspect volumes
 
@@ -173,7 +173,7 @@ directly. `docker exec claude-code-dock env` will never show these.
 |----------|---------|-------------|
 | `WORKSPACE_PATH` | `docker-compose.yml` volumes | Host path mounted at `/workspace` |
 | `CONFIG_BASE_PATH` | `docker-compose.yml` volumes | Base dir for per-session config, mounted at `/home/node/.claude` |
-| `SHARED_CONFIG_PATH` | `docker-compose.yml` volumes | Optional shared `CLAUDE.md`/`commands/` dir, mounted read-only |
+| `GLOBAL_CONFIG_PATH` | `docker-compose.yml` volumes | Optional global `CLAUDE.md`/`commands/`/`skills/` dir, mounted read-only |
 | `CLAUDE_DOCK_TAG` | `docker-compose.yml` `image:` | Published tag to pull (default `latest`; `stable` or a pinned `vX.Y.Z`) |
 | `CLAUDE_DOCK_VERSION` | `docker-compose.yml` `build:` | Git ref to build from when the pull fails and `CLAUDE_SOURCE_PATH` is unset (default `main`) |
 | `CLAUDE_SOURCE_PATH` | `docker-compose.yml` `build:` | Local clone to build from instead of pulling (advanced/dev) — see [Local development](#local-development) |

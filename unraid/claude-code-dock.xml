@@ -35,7 +35,7 @@ local XML") and what's needed before submitting it upstream (mainly a hosted
 
   <Config Name="Claude Config" Target="/home/node/.claude" Default="" Mode="rw" Description="This session's Claude Code credentials/settings (equivalent to CONFIG_BASE_PATH/REMOTE_SESSION_NAME in the Docker Compose setup). Use a distinct subfolder per container -- never point two containers at the same path." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/claude-code-dock/configs/default/</Config>
 
-  <Config Name="Shared Config (optional)" Target="/home/node/.claude-shared" Default="" Mode="ro" Description="Optional: a folder with a shared CLAUDE.md and commands/ applied to every session. Leave the host path empty/unused if you don't need this." Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/claude-code-dock/shared/</Config>
+  <Config Name="Global Config (optional)" Target="/home/node/.claude-global" Default="" Mode="ro" Description="Optional: a folder with a global CLAUDE.md, commands/, and skills/ applied to every session. Leave the host path empty/unused if you don't need this." Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/claude-code-dock/global/</Config>
 
   <Config Name="AUTO_START_MODE" Target="AUTO_START_MODE" Default="interactive" Mode="" Description="interactive (Claude in a terminal, default), remote (Claude Remote Control as the main process), or shell (debugging)." Type="Variable" Display="always" Required="false" Mask="false">interactive</Config>
 
