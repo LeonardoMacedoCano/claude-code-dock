@@ -132,7 +132,7 @@ For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PAT
 # SHARED_CREDENTIALS_PATH=/srv/claude-config/shared-credentials
 ```
 
-The first session to log in seeds that directory; every session started afterward loads from it instead of prompting. See [Environment Variables](docker.md#environment-variables) for the full behavior and caveats (it's a startup-time sync, not a live share).
+The first session to log in seeds that directory; every session started afterward loads from it instead of prompting. See [Environment Variables](docker.md#environment-variables) for the full behavior and caveats — it's a live share (a login or token refresh reaches every other session within a few seconds), except for a session that was already running before `SHARED_CREDENTIALS_PATH` was set up, which needs a restart to pick it up.
 
 ---
 

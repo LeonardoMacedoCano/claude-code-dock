@@ -33,6 +33,13 @@ setup_entrypoint_env() {
   # actually running the suite, and matches the "no token mounted" state.
   export GITHUB_TOKEN_FILE="$TEST_TMPDIR/no-github-token-file-by-default"
   export GIT_REPO_URL=""
+  # Bounds the SHARED_CREDENTIALS_PATH background poller to a single pass by
+  # default. Without this, every test that reaches the writable-shared-dir
+  # branch would spawn a `while true` loop that -- with sleep mocked to
+  # return instantly below -- busy-loops forever and outlives the test.
+  # Tests that actually exercise live reconciliation override this (and
+  # SHARED_CREDS_POLL_INTERVAL) themselves.
+  export SHARED_CREDS_POLL_MAX_ITERATIONS=1
 
   _mock_claude
   _mock_tmux

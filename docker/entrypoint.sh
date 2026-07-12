@@ -372,9 +372,86 @@ if [ -d "${SHARED_CREDS_DIR}" ]; then
             rm -f "${SESSION_CREDS}"
         fi
         ln -sf "${SHARED_CREDS_FILE}" "${SESSION_CREDS}"
-        if [ "${PROMOTED}" = "false" ] && [ -s "${SHARED_CREDS_FILE}" ]; then
-            log_info "Shared credentials: session linked to SHARED_CREDENTIALS_PATH (skips first login for this session)"
+        if [ "${PROMOTED}" = "false" ]; then
+            if [ -s "${SHARED_CREDS_FILE}" ]; then
+                log_info "Shared credentials: session linked to SHARED_CREDENTIALS_PATH (skips first login for this session)"
+            else
+                log_info "Shared credentials: session linked to SHARED_CREDENTIALS_PATH (mode=shared, pool currently empty -- waiting for first login)"
+            fi
         fi
+
+        # The symlink above only survives a write that opens SESSION_CREDS
+        # in place (O_TRUNC). `claude` does not do that for this file: a
+        # login or token refresh replaces the directory entry outright
+        # (write a new file + rename() over the old path), which detaches
+        # the old inode -- the symlink -- from that path exactly like it
+        # would detach any other file there, leaving a fresh regular file
+        # behind and SHARED_CREDS_FILE untouched. Confirmed empirically
+        # (see the incident this fixes): the shared pool stayed completely
+        # empty through a full login because the write never went through
+        # the link at all.
+        #
+        # There is no supported way to intercept that from outside the
+        # container without either a privileged bind-mount trick (rename()
+        # onto an actual mountpoint fails with EBUSY -- worse, not better)
+        # or CLAUDE_CONFIG_DIR (relocates the *entire* ~/.claude, not just
+        # this one file -- out of scope for a "shared login" feature). So
+        # this poller runs for the container's whole lifetime, plain bash
+        # only (no new package): every few seconds it checks whether
+        # SESSION_CREDS turned back into a real file (login/refresh just
+        # happened), and if so, immediately repeats the promote-then-link
+        # step above so the file is only ever outside SHARED_CREDENTIALS_PATH
+        # for a few seconds, never until the next restart.
+        #
+        # Runs as a background child of this script. The final `exec tmux
+        # ...` below replaces this process's image but keeps its PID and
+        # children (exec never detaches children -- only exiting would), so
+        # this keeps running for as long as the container does; it dies
+        # with the container's PID namespace on shutdown, nothing to clean
+        # up explicitly. Neither knob below is a documented .env variable --
+        # both exist purely for tests: SHARED_CREDS_POLL_INTERVAL shrinks the
+        # wait instead of sleeping 5s+ per assertion (same idiom as
+        # FATAL_MARKER_FILE being overridable above), and
+        # SHARED_CREDS_POLL_MAX_ITERATIONS (default 0 = unlimited, real
+        # production behavior) bounds the loop so a test's mocked, instant
+        # `sleep` can't turn this into a runaway busy-loop that outlives the
+        # test process.
+        #
+        # stdout/stderr redirected to /dev/null on the subshell itself
+        # (not just relying on log_warn/log_info's own file logging) for two
+        # reasons: (1) this poller can still be firing long after the final
+        # `exec tmux ...` below has handed the tty to tmux -- inheriting that
+        # same tty and echoing raw text into it would corrupt the live tmux
+        # display, and dock.log (via log_write, which every log_* call
+        # already does) is the intended durable record for anything past
+        # that point anyway, per the tty hand-off comment near HAS_CREDENTIALS
+        # below; (2) a test capturing this script's output (e.g. bats' `run`,
+        # which waits for the write end of its output pipe to hit EOF) would
+        # otherwise hang until every loop iteration finished, since a
+        # background child inheriting that same fd keeps it from reaching
+        # EOF.
+        (
+            set +e
+            _shared_creds_poll_iter=0
+            while true; do
+                sleep "${SHARED_CREDS_POLL_INTERVAL:-5}"
+                if [ -f "${SESSION_CREDS}" ] && [ ! -L "${SESSION_CREDS}" ] && [ -s "${SESSION_CREDS}" ]; then
+                    log_warn "Shared credentials: detected a new local write (login or token refresh broke the symlink) -- re-promoting into SHARED_CREDENTIALS_PATH"
+                    if cp "${SESSION_CREDS}" "${SHARED_CREDS_FILE}" 2>/dev/null; then
+                        rm -f "${SESSION_CREDS}"
+                        ln -sf "${SHARED_CREDS_FILE}" "${SESSION_CREDS}"
+                        log_info "Shared credentials: re-linked to SHARED_CREDENTIALS_PATH after live write"
+                    else
+                        log_warn "Shared credentials: could not write to SHARED_CREDENTIALS_PATH -- is it still mounted and writable? This session keeps using its local copy until it is."
+                    fi
+                fi
+                if [ "${SHARED_CREDS_POLL_MAX_ITERATIONS:-0}" -gt 0 ]; then
+                    _shared_creds_poll_iter=$((_shared_creds_poll_iter + 1))
+                    [ "${_shared_creds_poll_iter}" -ge "${SHARED_CREDS_POLL_MAX_ITERATIONS}" ] && break
+                fi
+            done
+        ) < /dev/null > /dev/null 2>&1 &
+        disown
     fi
 fi
 
