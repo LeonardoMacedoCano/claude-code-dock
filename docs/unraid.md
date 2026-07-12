@@ -469,6 +469,42 @@ raw daemon error instead. This almost always means two stacks (e.g. a
 [troubleshooting.md](troubleshooting.md#up-fails-after-a-successful-buildpull--conflict-the-container-name--is-already-in-use)
 for the fix — set a unique `CONTAINER_NAME` per stack's `.env`.
 
+### New session's config folder gets created owned by root (Compose Manager only, no scripts)
+
+If you only ever create sessions through the Compose Manager plugin's UI —
+duplicating a stack, changing `REMOTE_SESSION_NAME`/`CONTAINER_NAME` in its
+`.env` editor, then clicking **Compose Up** — you'll hit the `✗ FATAL: Config
+directory is not writable` message (see [Container restart
+loop](troubleshooting.md#container-restart-loop)) on every new session name,
+every time. This isn't a bug: `entrypoint.sh` deliberately never `chown`s a
+bind mount (only its own container-side `$HOME`), so nothing inside the
+container is allowed to fix this for you — see
+[architecture.md](architecture.md) if you want the full reasoning. Normally
+`./scripts/new-session.sh` does this `chown` on the host before the container
+ever starts; skipping straight to Compose Manager's "Compose Up" skips that
+step too.
+
+Since you're not using a terminal for this project, the fastest fix that
+doesn't require SSH or installing anything is Unraid's own built-in web
+terminal (the `>_` icon at the top-right of the Unraid UI, next to the user
+menu — it's a real shell inside the Unraid host, no separate login):
+
+```bash
+mkdir -p /mnt/user/prod-apps/claude-code-dock/config/<NEW_SESSION_NAME>
+chown -R 1000:1000 /mnt/user/prod-apps/claude-code-dock/config/<NEW_SESSION_NAME>
+# use your PUID/PGID instead of 1000:1000 if you set them in that stack's .env
+```
+
+Run that once, right after typing the new `REMOTE_SESSION_NAME` into the
+stack's `.env` and before clicking **Compose Up**. If you'd rather click a
+button than type a command each time, put the same two lines (with the
+session name replaced by `$1`, invoked as a User Scripts "Run in
+Background" script) into a saved script via the **User Scripts** plugin —
+same idea as the boot-start script in [1.7 above](#17--configure-automatic-startup-on-boot),
+just triggered on demand instead of at array start. Either way, this is a
+one-time step per new session name, not a recurring one — once the folder is
+chowned it stays chowned across restarts/updates.
+
 ### Docker UI shows the container as "unhealthy"
 
 claude-code-dock's `HEALTHCHECK` isn't an HTTP check (there's no server to

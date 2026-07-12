@@ -154,6 +154,13 @@ If you see a `✗ FATAL` block, it already tells you the fix — usually one of:
 2. `CONFIG_BASE_PATH` unset/misspelled, or the resolved directory on the host is not owned by UID 1000
 3. `WORKSPACE_PATH` unset/misspelled, or not owned by UID 1000
 
+Cause 2 is the most common one on a **new** `REMOTE_SESSION_NAME` — Docker
+auto-creates a bind-mount source that doesn't exist yet as `root:root`, and
+`entrypoint.sh` never `chown`s a bind mount itself (by design). `./scripts/new-session.sh`
+handles this for you; if you're starting sessions straight from Unraid's
+Compose Manager plugin UI instead, see
+[unraid.md](unraid.md#new-sessions-config-folder-gets-created-owned-by-root-compose-manager-only-no-scripts).
+
 After fixing `.env` or host permissions:
 ```bash
 docker compose up -d --force-recreate
