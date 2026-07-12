@@ -71,6 +71,8 @@ Requires `gpg` on the host (not inside the container). Set up your own host cron
 
 Anyone with access to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` can use your Claude Code credentials.
 
+If you opt into `SHARED_CREDENTIALS_FILE` to reuse one login across sessions, this widens the blast radius by design: one plaintext file now unlocks every session pointed at it, instead of a compromise being scoped to a single session's own `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/`. Same threat model as everything else in this document (single trusted host/user), just a bigger single point of failure — treat that file with the same care as the config directory above.
+
 **5. Known limitation — env vars are visible via the Docker daemon:**
 
 Any value passed through `environment:` in `docker-compose.yml` is stored in plain text in the container's process environment. Anyone with access to the Docker daemon on this host can read it with:

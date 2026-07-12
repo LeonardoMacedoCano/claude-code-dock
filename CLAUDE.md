@@ -135,6 +135,7 @@ Not just running the project — modifying claude-code-dock itself and needs the
 | Extra Claude CLI flags (e.g. `--dangerously-skip-permissions`) | `CLAUDE_EXTRA_ARGS` | Silent no-op when unset; malformed quoting warns and falls back to plain splitting; parsed via `xargs`, not `eval` — no shell expansion |
 | Remap container user off UID/GID 1000 | `PUID`/`PGID` | Validated — `0` or non-integer is `fatal()` |
 | Global `CLAUDE.md`/`commands/`/`skills/` across sessions | `GLOBAL_CONFIG_PATH` | Silent no-op when unset |
+| Share one Claude Code login across sessions instead of one per `REMOTE_SESSION_NAME` | `SHARED_CREDENTIALS_FILE` | Silent no-op when unset (mounted to `/dev/null`, gated on `-f`); warns if the host file doesn't exist yet (mount became a directory) |
 | Build from local clone instead of pulling | `CLAUDE_SOURCE_PATH` | Not validated by the container itself; `install.sh`/`update.sh`/`session-up.sh` generate `docker-compose.override.yml` to enforce it — a manual `docker compose up -d` run from the same directory picks that up too, once one of the scripts has generated it at least once |
 | Pin the pulled image tag | `CLAUDE_DOCK_TAG` | Silent no-op when unset (falls back to `:latest`); ignored entirely if `CLAUDE_SOURCE_PATH` is set |
 | Backup retention beyond the last 10 | `BACKUP_RETENTION` | Silent no-op when unset (defaults to 10) |
@@ -305,6 +306,17 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
   `GITHUB_TOKEN_FILE` (falls back to `/dev/null` rather than a real host
   directory when unset) — see [`docker-compose.yml`](#docker-composeyml)
   below for why that matters.
+- **`SHARED_CREDENTIALS_FILE` (optional):** a dedicated single-file mount,
+  `SHARED_CREDENTIALS_FILE:/home/node/.claude-shared-credentials.json`, same
+  `/dev/null`-fallback idiom as `GITHUB_TOKEN_FILE`/`GLOBAL_CONFIG_PATH`. Lets
+  several sessions reuse one Claude Code login instead of each needing its
+  own — `entrypoint.sh` copies `~/.claude/.credentials.json` to/from this
+  path once at startup (see [File Responsibilities](#file-responsibilities)
+  below), never straight onto `~/.claude/.credentials.json` itself, since
+  Compose has no leak-free way to make a volume line conditional (same
+  constraint as `CLAUDE_SOURCE_PATH`'s build context, below) — mounting
+  straight onto that path would shadow every session's real credentials with
+  the `/dev/null` fallback for anyone who never opted in.
 - **`install.sh`/`new-session.sh` chown the host-side config/workspace
   directories to `PUID`/`PGID` before the container ever starts.** A brand-new
   `REMOTE_SESSION_NAME`'s config directory does not exist yet on first start;
@@ -333,6 +345,7 @@ before touching `Dockerfile`/`docker/entrypoint.sh`:
 | `CONFIG_BASE_PATH` | `./configs` | Base directory for per-session config subdirectories |
 | `REMOTE_SESSION_NAME` | `` | **Required.** Unique session ID — isolates config, names backups, prevents duplicate containers |
 | `GLOBAL_CONFIG_PATH` | `` | Optional global dir with global `CLAUDE.md`, `commands/`, and `skills/` applied to all sessions. Unset falls back to `/dev/null` in `docker-compose.yml`'s mount (not a real host directory), so leaving this unset creates nothing on the host |
+| `SHARED_CREDENTIALS_FILE` | `` | HOST path to a file used to share one Claude Code login across sessions instead of one per `REMOTE_SESSION_NAME`. Must already exist as a file (even empty) before first use. Unset falls back to `/dev/null`, same idiom as `GITHUB_TOKEN_FILE`/`GLOBAL_CONFIG_PATH` — a no-op for anyone who doesn't set it |
 | `TZ` | `UTC` | Timezone |
 | `GIT_USER_NAME` | `` | Name for git commits |
 | `GIT_USER_EMAIL` | `` | Email for git commits |
@@ -421,6 +434,7 @@ must always end on that final `exec` — never a plain call, which would leave
 - `image: ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest}` + `build:`: both present intentionally — `image:` is the default pull path, `build:` is the fallback used when `CLAUDE_SOURCE_PATH` is set. `build.args` also passes `CLAUDE_DOCK_SOURCE_PATH`/`CLAUDE_DOCK_VERSION` through so the Dockerfile can bake which one was used into `/etc/claude-dock-build-source` — read by `entrypoint.sh`'s startup log and `scripts/status.sh`. Full rationale for why both fields coexist, and why a bare `docker compose up -d` needs `docker-compose.override.yml` to actually rebuild from `CLAUDE_SOURCE_PATH`: [docs/architecture.md — Design Decisions](docs/architecture.md#design-decisions).
 - `- ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro` in `volumes:`: the "optional file mount" idiom — mounts the real host token file when `.env`'s `GITHUB_TOKEN_FILE` is set, or a harmless empty `/dev/null` when it's not, so this line is always present and always safe regardless of whether the operator configured a token. Paired with `- GITHUB_TOKEN_FILE=/run/secrets/github_token` in `environment:`, which is a **literal**, not `${GITHUB_TOKEN_FILE:-}` — the container always looks at this fixed convention path; the host-side `.env` value is only ever used for the volume mount source, never passed into the container directly.
 - `- ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro` in `volumes:`: same optional-file-mount idiom as `GITHUB_TOKEN_FILE` above — falls back to `/dev/null` rather than a real host directory when unset, so the feature never leaves behind an unexplained root-owned directory nobody opted into.
+- `- ${SHARED_CREDENTIALS_FILE:-/dev/null}:/home/node/.claude-shared-credentials.json` in `volumes:`: same optional-file-mount idiom, but **not** `:ro` — `entrypoint.sh` writes to this path too (seeding it from the first session to log in). Deliberately targets a dedicated, otherwise-unused path rather than `/home/node/.claude/.credentials.json` directly: the `/dev/null` fallback would then shadow every session's real credentials file for anyone who never set `SHARED_CREDENTIALS_FILE`, the same class of problem the `CLAUDE_SOURCE_PATH` interpolation rule below exists to avoid.
 - Resource limits (CPU/memory) are **not** in this file — they live in the opt-in `docker-compose.resources.yml` overlay (explicit `-f`, never auto-loaded), both because `docker-compose.override.yml` is already scripts-managed for `CLAUDE_SOURCE_PATH` and would silently clobber anything else placed in it, and because a hardcoded limit here would be wrong for most hosts. See that file's header comment.
 - `- PUID=${PUID:-1000}` / `- PGID=${PGID:-1000}` in `environment:`: read by `entrypoint.sh`'s root step-down block to remap the `node` account before dropping privilege. No corresponding `user:` field is set on the service — the container must start as root (the image's default, see the `Dockerfile` section) for that remap to be possible at all.
 
@@ -433,6 +447,7 @@ must always end on that final `exec` — never a plain call, which would leave
 - Do not move the `CLAUDE_SOURCE_PATH` branching into `docker-compose.yml` itself via `${CLAUDE_SOURCE_PATH:-x}` interpolation on `image:`/`pull_policy:` — this was tried and reverted; the raw path leaks into those fields (breaks on `/`) since Compose's substitution can't express a leak-free two-way branch from one arbitrary-content variable. The `docker-compose.override.yml` generated by the scripts is the correct mechanism; keep it as a separate, gitignored file
 - Do not change the `GITHUB_TOKEN_FILE` `environment:` line to interpolate `${GITHUB_TOKEN_FILE:-}` (the host value) instead of the literal `/run/secrets/github_token` — that would leak the *host path* into the container's env (harmless but pointless) and, worse, break `entrypoint.sh`'s assumption that this env var always points at the mount target
 - Do not reintroduce a raw inline-secret env var for the GitHub token — the whole point of the file-mount design is that the token's value never sits in `.env`, in this file, or in the container's process environment
+- Do not point the `SHARED_CREDENTIALS_FILE` volume line straight at `/home/node/.claude/.credentials.json` — see the bullet above; the `/dev/null` fallback would silently break default (non-shared) credential persistence for every operator who hasn't set the variable
 
 ---
 
@@ -450,6 +465,7 @@ must always end on that final `exec` — never a plain call, which would leave
 7. New mandatory-config checks belong in `validate_config()`, called right after the `claude` binary check and before any mutation (symlinks, git config, settings.json) — fail via `fatal()`, not a bare `exit`
 8. `fatal()`'s `sleep infinity` still makes the Dockerfile `HEALTHCHECK` report `unhealthy` (no tmux session was ever created), so `fatal()` touches `FATAL_MARKER_FILE` (default `/tmp/claude-dock-fatal`, overridable for tests) right before parking PID 1. `scripts/watchdog.sh` checks this marker via `docker exec` and skips restarting when it's present — otherwise an external watchdog reacting to that same `unhealthy` status would restart the container every cycle, recreating the exact loop `fatal()` exists to avoid. The marker is `rm -f`'d unconditionally at the top of the script on every run (including a plain `docker restart`, which re-execs this script but keeps the container's writable layer) so a stale marker from a past fatal run never survives into a run that didn't hit `fatal()` again.
 9. The very first block in the file (before even the color variable definitions) is the root step-down: `if [ "$(id -u)" = "0" ]; then ... fi`. It validates `PUID`/`PGID` (rejecting `0` or non-integers via the same `fatal()`-style pattern — plain `echo`+marker+`sleep infinity`, since the real `fatal()` function isn't defined yet at this point in the file), optionally remaps `node` via `usermod`/`groupmod` when they differ from the 1000/1000 default, `chown`s `$HOME` (never a bind mount), then `exec setpriv --reuid=node --regid=node --init-groups /bin/bash "$0" "$@"` to re-run this same script as the now-non-root user — on that second pass `id -u` is no longer `0`, so this block is a no-op and everything below is unaffected. Do not move this block, and do not let anything above it (there is nothing above it on purpose) perform mutations — it's the only root-context code in the file.
+10. `SHARED_CREDENTIALS_FILE` sync (right after the `~/.claude.json` symlink block, before `HAS_CREDENTIALS` is read): a one-time, startup-only copy between `~/.claude/.credentials.json` (this session's own, always inside the per-session mount) and `~/.claude-shared-credentials.json` (the dedicated mount fed by `SHARED_CREDENTIALS_FILE`, see the `docker-compose.yml` section above). Gated on `[ -f "${SHARED_CREDS_MOUNT}" ]` — true only when the operator actually set `SHARED_CREDENTIALS_FILE` to a real host file, since the unset `/dev/null` fallback is a character special file, not a regular one, so `-f` is false and the whole block is a no-op. Direction is decided by which side already has content: a session with its own non-empty `.credentials.json` only ever *seeds* the shared file (and only if the shared file is still empty — never overwrites an already-logged-in session with a stale shared copy); a session with no credentials yet *loads* from the shared file if it has content, skipping that session's first login. This is a startup-only sync, not continuous — a token rotated inside a session after the initial seed does not propagate back to the shared file or to other running containers.
 
 **Required flow:**
 ```
@@ -765,6 +781,8 @@ Architecture above), no host-level privilege needed at all.
 
 4. **CLAUDE_EXTRA_ARGS parsing:** The variable is parsed with quote-aware splitting via `xargs -n1` (see `docker/entrypoint.sh`), so a quoted substring survives as a single argument (e.g. `CLAUDE_EXTRA_ARGS=--append-system-prompt "be terse"`). Unlike the earlier `eval`-based implementation, `xargs` never expands `$(...)`, backticks, `~`, or globs — a value containing shell metacharacters is only ever passed through as literal text, never executed. A non-zero `xargs` exit (unmatched quote) falls back to plain whitespace splitting with a warning rather than aborting startup.
 
+5. **SHARED_CREDENTIALS_FILE is a startup-time snapshot, not a live share:** the sync only runs once, at container start. If a session's Claude Code token rotates while it's already running, that change doesn't propagate to the shared file or to other already-running containers — only a restart re-triggers the sync, and only in the "seed if the shared file is still empty" direction (see `docker/entrypoint.sh` development rule 10), so a rotated token never overwrites a stale shared copy automatically. If shared login ever stops working, log in again in one session and manually copy its `.credentials.json` over the `SHARED_CREDENTIALS_FILE` host path, then restart the other containers.
+
 ---
 
 ## Roadmap
@@ -797,6 +815,7 @@ Architecture above), no host-level privilege needed at all.
 - [x] `scripts/update.sh` waits for `healthy` (not just `Running`) after updating and automatically rolls back to the previous image if it isn't, instead of leaving a broken container up
 - [x] `CHANGELOG.md`: dated, user-facing log of what changed, linked from the README
 - [x] Removed `CLAUDE_AUTO_APPROVE` — the toggle wasn't actually applying `--dangerously-skip-permissions` reliably in practice, and the same result is available via `CLAUDE_EXTRA_ARGS` (which already supports arbitrary flags) without a second, narrower mechanism to keep in sync with it. Anyone who still wants this must pass `--dangerously-skip-permissions` explicitly through `CLAUDE_EXTRA_ARGS`
+- [x] `SHARED_CREDENTIALS_FILE`: optional single-file mount letting several sessions reuse one Claude Code login instead of one per `REMOTE_SESSION_NAME`, following the same `/dev/null`-fallback idiom as `GITHUB_TOKEN_FILE`/`GLOBAL_CONFIG_PATH`. Startup-only sync, not continuous — see `docker/entrypoint.sh` development rule 10
 
 ### Possible Future Improvements
 

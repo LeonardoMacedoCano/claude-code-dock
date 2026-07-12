@@ -30,6 +30,7 @@ services:
       - ${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}:/home/node/.claude
       - ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro
       - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro
+      - ${SHARED_CREDENTIALS_FILE:-/dev/null}:/home/node/.claude-shared-credentials.json
     stdin_open: true
     tty: true
     restart: unless-stopped
