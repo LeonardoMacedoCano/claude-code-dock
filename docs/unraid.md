@@ -160,6 +160,28 @@ GIT_USER_EMAIL=your@email.com
 > ever gets a chance to auto-create it as root, so this shouldn't come up
 > again.
 
+#### Running multiple sessions? Optionally share one login between them
+
+Each `REMOTE_SESSION_NAME` still gets its own isolated credentials folder
+under `CONFIG_BASE_PATH` by default — even two sessions sharing the same
+`CONFIG_BASE_PATH` each prompt for their own login. If you'd rather log in
+once and have every session use it, add the same `SHARED_CREDENTIALS_PATH`
+to every session's `.env` (it doesn't need to exist beforehand):
+
+```env
+SHARED_CREDENTIALS_PATH=/mnt/user/appdata/claude-code-dock/shared-credentials
+```
+
+The first session to log in seeds it; every session started afterward loads
+from it instead of prompting. It's a live share — a login or token refresh
+in any session reaches the others within a few seconds — except for a
+session that was already running before this variable was set, which needs
+a restart to pick it up. See
+[Docker Reference: claude-code-dock volumes](docker.md#claude-code-dock-volumes)
+for the full mechanism and
+[Troubleshooting](troubleshooting.md#shared-login-shared_credentials_path-isnt-syncing-between-sessions)
+if it stops working.
+
 ### 1.5 — Create the workspace directory
 
 ```bash
@@ -531,6 +553,6 @@ A CA-compatible XML template ships at [`unraid/claude-code-dock.xml`](../unraid/
    `https://raw.githubusercontent.com/LeonardoMacedoCano/claude-code-dock/main/unraid/claude-code-dock.xml`
 4. Review the fields it pre-fills (workspace path, config path, `REMOTE_SESSION_NAME`, etc. — same variables as [Method 2](#22--add-container-via-ui) above) and click **Apply**
 
-For a second session, repeat with a different container **Name**, a different **Claude Config** host path, and a different `REMOTE_SESSION_NAME` — same isolation pattern as the Compose-based [Multiple Instances](docker.md#multiple-instances) setup via `new-session.sh`/`session-up.sh`.
+For a second session, repeat with a different container **Name**, a different **Claude Config** host path, and a different `REMOTE_SESSION_NAME` — same isolation pattern as the Compose-based [Multiple Instances](docker.md#multiple-instances) setup via `new-session.sh`/`session-up.sh`. To share one Claude login between them instead of logging in twice, point both containers' **Shared Credentials (optional)** field at the same host path — not the **Claude Config** field, which is per-session and holds more than just the login.
 
 Until this is in the official CA feed, Method 1 (Docker Compose) or Method 2 (manual Docker UI) remain the more discoverable options for most users.
