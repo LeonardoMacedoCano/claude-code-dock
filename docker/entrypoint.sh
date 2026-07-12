@@ -313,6 +313,16 @@ fi
 # here, which is a character special file, so -d is false and this whole
 # block is a silent no-op for every operator who hasn't opted in -- no extra
 # log lines, no extra work.
+#
+# Symlinked, not copied -- same idiom as CLAUDE_JSON_LINK/CLAUDE_JSON_REAL
+# just above. A one-time startup copy would only ever reflect whatever the
+# session's credentials looked like at boot: a login performed later in that
+# same container's lifetime (the common case -- first login always happens
+# after startup, via the attach/remote-control session) would land in
+# SESSION_CREDS and stay there until a restart. Pointing SESSION_CREDS at
+# SHARED_CREDS_FILE means `claude`'s own login writes go straight to
+# SHARED_CREDENTIALS_PATH as they happen, with no restart required, exactly
+# like ~/.claude.json already does for the config file above.
 SHARED_CREDS_DIR="${HOME}/.claude-shared-credentials"
 SHARED_CREDS_FILE="${SHARED_CREDS_DIR}/.credentials.json"
 SESSION_CREDS="${HOME}/.claude/.credentials.json"
@@ -326,17 +336,45 @@ if [ -d "${SHARED_CREDS_DIR}" ]; then
         # and works normally, it just can't participate in the shared pool
         # until the operator fixes ownership.
         log_warn "SHARED_CREDENTIALS_PATH is not writable by this container's user -- shared login sync skipped. Fix on the host: chown -R ${PUID:-1000}:${PGID:-1000} <your SHARED_CREDENTIALS_PATH>, then docker compose up -d --force-recreate"
-    elif [ -s "${SESSION_CREDS}" ]; then
-        # This session already has its own login. Never overwrite it with a
-        # (possibly stale) shared copy -- only backfill the shared file if
-        # it's still empty, so the first session to log in seeds the pool.
-        if [ ! -s "${SHARED_CREDS_FILE}" ]; then
-            cp "${SESSION_CREDS}" "${SHARED_CREDS_FILE}"
-            log_info "Shared credentials: seeded SHARED_CREDENTIALS_PATH from this session's existing login"
+        # A prior successful boot may have already linked SESSION_CREDS to
+        # SHARED_CREDS_FILE. If the mount merely turned read-only (not fully
+        # unreachable), materialize a real local copy so this session keeps
+        # working standalone this run instead of being stranded behind a link
+        # `claude` can't write through -- it rejoins the shared pool on its
+        # own the next time this session restarts with a writable mount (the
+        # promote step below turns a real file back into a link).
+        if [ -L "${SESSION_CREDS}" ] && [ -s "${SESSION_CREDS}" ]; then
+            if cp "${SESSION_CREDS}" "${SESSION_CREDS}.recovered" 2>/dev/null; then
+                rm -f "${SESSION_CREDS}"
+                mv "${SESSION_CREDS}.recovered" "${SESSION_CREDS}"
+                log_warn "Recovered a local copy of this session's credentials so login still works standalone this run."
+            else
+                log_warn "This session's own credentials link could not be read either -- login will likely fail until SHARED_CREDENTIALS_PATH is reachable again."
+            fi
         fi
-    elif [ -s "${SHARED_CREDS_FILE}" ]; then
-        cp "${SHARED_CREDS_FILE}" "${SESSION_CREDS}"
-        log_info "Shared credentials: loaded from SHARED_CREDENTIALS_PATH (skips first login for this session)"
+    else
+        # A regular file at SESSION_CREDS here means this session already has
+        # its own login predating SHARED_CREDENTIALS_PATH being set (or a
+        # prior claude-code-dock version that only copied instead of
+        # linking). Fold it into the shared file before linking over it, so
+        # an existing login is promoted into the shared pool instead of
+        # being silently orphaned.
+        PROMOTED=false
+        if [ -f "${SESSION_CREDS}" ] && [ ! -L "${SESSION_CREDS}" ]; then
+            if [ -s "${SESSION_CREDS}" ]; then
+                if [ -s "${SHARED_CREDS_FILE}" ] && ! cmp -s "${SESSION_CREDS}" "${SHARED_CREDS_FILE}"; then
+                    log_warn "SHARED_CREDENTIALS_PATH already held different credentials -- replacing them with this session's own login. Any other session already linked to this pool will pick up the new token on its next restart."
+                fi
+                cp "${SESSION_CREDS}" "${SHARED_CREDS_FILE}"
+                log_info "Shared credentials: promoted this session's own login into SHARED_CREDENTIALS_PATH"
+                PROMOTED=true
+            fi
+            rm -f "${SESSION_CREDS}"
+        fi
+        ln -sf "${SHARED_CREDS_FILE}" "${SESSION_CREDS}"
+        if [ "${PROMOTED}" = "false" ] && [ -s "${SHARED_CREDS_FILE}" ]; then
+            log_info "Shared credentials: session linked to SHARED_CREDENTIALS_PATH (skips first login for this session)"
+        fi
     fi
 fi
 

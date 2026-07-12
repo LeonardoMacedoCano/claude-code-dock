@@ -15,9 +15,16 @@ want to know what's actually changing.
   needing its own (which was, and remains, the default). Same
   `/dev/null`-fallback idiom as `GITHUB_TOKEN_FILE`/`GLOBAL_CONFIG_PATH` — a
   no-op unless set. Doesn't need to exist beforehand (created empty on first
-  use, unlike a single-file mount). The first session to log in seeds it;
-  every session started afterward loads from it instead of prompting for
-  login. One-time sync at container startup, not a live/continuous share.
+  use, unlike a single-file mount). `~/.claude/.credentials.json` is
+  symlinked into it at startup, so a login performed at any point during that
+  session's runtime — not just one already present at container start — and
+  any later token rotation both write straight through, with no restart
+  needed and no risk of a stale copy shadowing a real login.
+  `scripts/backup.sh` dereferences this symlink into a real file before
+  taring `CONFIG_DIR`, so a session's backup archive still contains the
+  actual credential bytes instead of a link `tar` would otherwise store as
+  just a target path — `restore.sh` needed no changes, since the restored
+  archive already has a plain file at the usual path.
   See [docs/docker.md](docs/docker.md#claude-code-dock-volumes).
 - `GLOBAL_CONFIG_PATH` now also links a `skills/` subdirectory into
   `~/.claude/skills/` at startup, mirroring the existing `commands/` handling
