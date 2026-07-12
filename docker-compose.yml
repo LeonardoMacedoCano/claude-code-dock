@@ -1,20 +1,6 @@
 services:
   claude-code-dock:
     container_name: ${CONTAINER_NAME:-claude-code-dock}
-    # image: pull path (fast, default). build: fallback path (CLAUDE_SOURCE_PATH
-    # local dev, or explicit `docker compose build`). Both intentional — see
-    # CLAUDE.md#docker-composeyml for the full rationale, including the
-    # `docker compose up -d --build` gotcha with CLAUDE_SOURCE_PATH.
-    #
-    # That gotcha (a plain `up -d` won't rebuild if a matching image tag
-    # already exists locally) is why install.sh/update.sh/session-up.sh
-    # generate a docker-compose.override.yml next to this file whenever
-    # CLAUDE_SOURCE_PATH is set -- Compose auto-loads it from any invocation
-    # run in this directory, overriding image/pull_policy to always build
-    # from CLAUDE_SOURCE_PATH into a dedicated local tag. Deliberately not
-    # expressed as `${CLAUDE_SOURCE_PATH:-x}` interpolation here in the base
-    # file -- that would leak the raw host path into image/pull_policy,
-    # which don't tolerate arbitrary content (breaks on `/`).
     image: ghcr.io/leonardomacedocano/claude-code-dock:${CLAUDE_DOCK_TAG:-latest}
     build:
       context: ${CLAUDE_SOURCE_PATH:-https://github.com/LeonardoMacedoCano/claude-code-dock.git#${CLAUDE_DOCK_VERSION:-main}}
@@ -23,25 +9,18 @@ services:
         CLAUDE_DOCK_SOURCE_PATH: ${CLAUDE_SOURCE_PATH:-}
         CLAUDE_DOCK_VERSION: ${CLAUDE_DOCK_VERSION:-main}
     environment:
-      # PUID/PGID: read by entrypoint.sh's root step-down block (default
-      # 1000/1000, a no-op when unset). See CLAUDE.md#docker-composeyml.
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-      # Informational only (entrypoint.sh's startup banner) -- container_name:
-      # above is what actually names the container; this just lets the
-      # banner print the right `docker exec` command instead of a stale literal.
       - CONTAINER_NAME=${CONTAINER_NAME:-claude-code-dock}
       - AUTO_START_MODE=${AUTO_START_MODE:-interactive}
       - CLAUDE_AUTO_APPROVE=${CLAUDE_AUTO_APPROVE:-false}
       - CLAUDE_EXTRA_ARGS=${CLAUDE_EXTRA_ARGS:-}
       - REMOTE_SESSION_NAME=${REMOTE_SESSION_NAME:-}
-      # Host-side paths, passed through for startup-error messages.
       - CONFIG_BASE_PATH=${CONFIG_BASE_PATH:-}
       - WORKSPACE_PATH=${WORKSPACE_PATH:-}
       - TZ=${TZ:-UTC}
       - GIT_USER_NAME=${GIT_USER_NAME:-}
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
-      # Fixed convention path -- do not change; see CLAUDE.md#docker-composeyml.
       - GITHUB_TOKEN_FILE=/run/secrets/github_token
       - GIT_REPO_URL=${GIT_REPO_URL:-}
       - TERM=xterm-256color
@@ -50,18 +29,7 @@ services:
     volumes:
       - ${WORKSPACE_PATH:-./workspaces}:/workspace
       - ${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}:/home/node/.claude
-      # Optional file mount, same idiom as GITHUB_TOKEN_FILE below: falls back
-      # to /dev/null rather than a real host directory (e.g. ./global-config)
-      # when GLOBAL_CONFIG_PATH is unset, so an unused feature doesn't leave
-      # behind an auto-created, root-owned host directory nobody asked for.
-      # entrypoint.sh only ever does `[ -f "$GLOBAL_DIR"/CLAUDE.md ]` / `[ -d
-      # "$GLOBAL_DIR"/commands ]` against this path -- both simply evaluate
-      # false when the mount target is /dev/null instead of a real directory,
-      # so this degrades to the same silent no-op as leaving it unmounted.
-      # See CLAUDE.md#docker-composeyml.
       - ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro
-      # Optional file mount: real token file if GITHUB_TOKEN_FILE is set in
-      # .env, harmless /dev/null otherwise. See CLAUDE.md#docker-composeyml.
       - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro
     stdin_open: true
     tty: true
@@ -71,11 +39,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    # Resource limits (CPU/memory) live in the opt-in docker-compose.resources.yml
-    # overlay instead of here -- a hardcoded value in this tracked file would be
-    # wrong for most hosts (a Raspberry Pi and a 32-core Unraid box have nothing
-    # in common). See that file's header comment, especially if
-    # CLAUDE_AUTO_APPROVE=true: with no per-command human checkpoint, nothing
-    # else in this project caps how much CPU/memory a single Claude-issued
-    # command can consume on this host.
-    #   docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d
