@@ -404,6 +404,62 @@ docker compose restart
 
 ---
 
+### Shared login (`SHARED_CREDENTIALS_PATH`) isn't syncing between sessions
+
+**Symptom:** you set the same `SHARED_CREDENTIALS_PATH` in two or more
+sessions' `.env`, but a login done in one session doesn't show up in the
+others, or a session that should already be authenticated still prompts for
+login.
+
+**Diagnosis — check `dock.log` first**, it says plainly what happened:
+```bash
+./scripts/logs.sh --app
+# or: tail -f "${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}/logs/dock.log"
+```
+Look for lines containing `Shared credentials`. They tell you which of these
+happened on this session's last startup:
+- Linked to the shared pool (normal case)
+- This session's login was just promoted into the shared pool (first login
+  after `SHARED_CREDENTIALS_PATH` was set, or the pool was empty)
+- Re-linked after a live write was detected (the background poller caught a
+  login/token refresh within the last few seconds and re-established the
+  link — this is expected to happen briefly after every login, not an error)
+- A warning that `SHARED_CREDENTIALS_PATH` isn't writable by the container's
+  user — this session is running standalone, not sharing
+
+**Causes and solutions:**
+
+**A) The shared directory isn't writable by UID 1000 (or your `PUID`/`PGID`):**
+```bash
+ls -la "$SHARED_CREDENTIALS_PATH"   # on the host
+chown -R 1000:1000 "$SHARED_CREDENTIALS_PATH"
+docker compose restart   # in each session using it
+```
+
+**B) A session was already running *before* `SHARED_CREDENTIALS_PATH` was
+set (or before the shared file existed):** the symlink and its background
+poller are only established once, at container startup — this session needs
+a restart to pick up the change:
+```bash
+docker compose up -d --force-recreate
+```
+
+**C) The shared login was revoked, expired, or a token rotated after the
+initial seed:** delete the credentials file inside the shared directory, log
+in again in one session, then restart the others to reseed from it:
+```bash
+rm "$SHARED_CREDENTIALS_PATH"/.credentials.json
+./scripts/attach.sh   # in one session, complete the login flow
+# then, in every other session:
+docker compose restart
+```
+
+See [Docker Reference: claude-code-dock volumes](docker.md#claude-code-dock-volumes)
+for the full mechanism (symlink + 5s poller, why a plain symlink alone isn't
+enough).
+
+---
+
 ## Workspace Problems
 
 ### Empty workspace inside the container
