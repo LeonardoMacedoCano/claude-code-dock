@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="claude-code-dock" width="120">
+</p>
+
 # Claude Code Dock
 
 **Run Claude Code persistently on a 24/7 server — always on, always authenticated, accessible from any device.**

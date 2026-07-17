@@ -5,8 +5,8 @@ Community Applications template for claude-code-dock.
 Not yet submitted to the CA repository (Templates3 feed) — see
 docs/unraid.md#community-applications-template for how to use this locally
 today (Docker tab -> Add Container -> Template dropdown -> "Load from URL /
-local XML") and what's needed before submitting it upstream (mainly a hosted
-128x128 <Icon>, currently left empty below).
+local XML"). The <Icon> below points at assets/icon.png on the main branch
+via raw.githubusercontent.com — update the path if that file ever moves.
 -->
 <Container version="2">
   <Name>claude-code-dock</Name>
@@ -22,7 +22,7 @@ local XML") and what's needed before submitting it upstream (mainly a hosted
   <Category>Tools: Productivity: Utilities:</Category>
   <WebUI/>
   <TemplateURL/>
-  <Icon></Icon>
+  <Icon>https://raw.githubusercontent.com/LeonardoMacedoCano/claude-code-dock/main/assets/icon.png</Icon>
   <ExtraParams>--interactive --tty</ExtraParams>
   <PostArgs/>
   <CPUset/>
