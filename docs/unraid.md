@@ -566,7 +566,7 @@ Set the `projects` share to **Use Cache: Yes** in the Unraid panel to automatica
 
 ## Community Applications Template
 
-A CA-compatible XML template ships at [`unraid/claude-code-dock.xml`](../unraid/claude-code-dock.xml). It hasn't been submitted to the official CA feed yet (that requires a hosted icon and a review PR against Unraid's Community Applications repo), but you can use it today without waiting for that:
+A CA-compatible XML template ships at [`unraid/claude-code-dock.xml`](../unraid/claude-code-dock.xml), with its `<Icon>` already pointing at [`assets/icon.png`](../assets/icon.png). It hasn't been submitted to the official CA feed yet (that requires a review PR against Unraid's Community Applications repo), but you can use it today without waiting for that:
 
 1. Go to **Docker** -> **Add Container**
 2. At the bottom, switch **Template** to **"Load a template from a URL or local path"**

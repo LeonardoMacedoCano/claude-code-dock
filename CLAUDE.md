@@ -827,13 +827,14 @@ Architecture above), no host-level privilege needed at all.
 - [x] `CHANGELOG.md`: dated, user-facing log of what changed, linked from the README
 - [x] Removed `CLAUDE_AUTO_APPROVE` — the toggle wasn't actually applying `--dangerously-skip-permissions` reliably in practice, and the same result is available via `CLAUDE_EXTRA_ARGS` (which already supports arbitrary flags) without a second, narrower mechanism to keep in sync with it. Anyone who still wants this must pass `--dangerously-skip-permissions` explicitly through `CLAUDE_EXTRA_ARGS`
 - [x] `SHARED_CREDENTIALS_PATH`: optional directory mount letting several sessions reuse one Claude Code login instead of one per `REMOTE_SESSION_NAME`, following the same `/dev/null`-fallback idiom as `GITHUB_TOKEN_FILE`/`GLOBAL_CONFIG_PATH`. A directory (not a single file) so a not-yet-existing host path is just created empty on first use. Linked via symlink at startup plus a background poller that re-establishes the link within a few seconds of any login/refresh breaking it (`claude` replaces the file via `rename()`, which detaches a plain symlink) — see `docker/entrypoint.sh` development rule 10
+- [x] Project icon (`assets/icon.svg` + `assets/icon.png`, isometric voxel whale mascot) — shown in the README header and wired into `unraid/claude-code-dock.xml`'s `<Icon>` via its `raw.githubusercontent.com` URL
 
 ### Possible Future Improvements
 
 **Infrastructure:**
 - Multi-user support via separate instances
 - Watchtower integration for automatic updates
-- Submit the Unraid template to the Community Applications feed (needs a hosted 128x128 icon)
+- Submit the Unraid template to the Community Applications feed (icon is now hosted; still needs a review PR against Unraid's Community Applications repo)
 
 **Documentation:**
 - Synology DSM guide with screenshots
