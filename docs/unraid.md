@@ -179,7 +179,11 @@ The first session to log in seeds it; every session started afterward loads
 from it instead of prompting. It's a live share — a login or token refresh
 in any session reaches the others within a few seconds — except for a
 session that was already running before this variable was set, which needs
-a restart to pick it up. See
+a restart to pick it up. Prefer a one-time provision over a continuous live
+share instead? Set `SHARED_CREDENTIALS_MODE=seed` in every session's `.env`
+and run `./scripts/promote-credentials.sh` explicitly when you want the pool
+updated — see [Docker Reference: Shared Credentials Mode](docker.md#shared-credentials-mode).
+See
 [Docker Reference: claude-code-dock volumes](docker.md#claude-code-dock-volumes)
 for the full mechanism and
 [Troubleshooting](troubleshooting.md#shared-login-shared_credentials_path-isnt-syncing-between-sessions)

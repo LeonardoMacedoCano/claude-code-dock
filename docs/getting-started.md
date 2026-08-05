@@ -132,7 +132,7 @@ For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PAT
 # SHARED_CREDENTIALS_PATH=/srv/claude-config/shared-credentials
 ```
 
-The first session to log in seeds that directory; every session started afterward loads from it instead of prompting. See [Environment Variables](docker.md#environment-variables) for the full behavior and caveats — it's a live share (a login or token refresh reaches every other session within a few seconds), except for a session that was already running before `SHARED_CREDENTIALS_PATH` was set up, which needs a restart to pick it up.
+The first session to log in seeds that directory; every session started afterward loads from it instead of prompting. This is the default (`SHARED_CREDENTIALS_MODE=live`) behavior — it's a live share (a login or token refresh reaches every other session within a few seconds), except for a session that was already running before `SHARED_CREDENTIALS_PATH` was set up, which needs a restart to pick it up. Prefer a one-time provision instead of a continuous live share? Set `SHARED_CREDENTIALS_MODE=seed` in every session's `.env` and run `./scripts/promote-credentials.sh` explicitly whenever you want the pool updated — see [Docker Reference: Shared Credentials Mode](docker.md#shared-credentials-mode) for the trade-offs.
 
 ---
 
@@ -163,6 +163,7 @@ Available after cloning the repo (each supports `-h`/`--help` for details):
 ./scripts/update.sh       # Pull latest image (or rebuild if CLAUDE_SOURCE_PATH is set), restart
 ./scripts/backup.sh       # Backup credentials and workspace
 ./scripts/restore.sh      # Restore from a backup
+./scripts/promote-credentials.sh  # Share this session's login (SHARED_CREDENTIALS_MODE=seed only)
 ./scripts/claude.sh       # Run Claude via docker exec (separate session)
 ./scripts/remote.sh       # Temporary Remote Control session via docker exec
 ```

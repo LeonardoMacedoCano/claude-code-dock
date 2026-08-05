@@ -103,7 +103,7 @@ The project uses five volumes:
 ```yaml
 volumes:
   - ${WORKSPACE_PATH}:/workspace                                     # User projects
-  - ${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}:/home/node/.claude     # Claude Code credentials (per-session)
+  - ${INSTANCE_CONFIG_PATH:-${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}}:/home/node/.claude  # Claude Code credentials (per-session)
   - ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro     # Optional: global CLAUDE.md/commands/skills (or /dev/null, a no-op)
   - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro      # Optional: GitHub PAT file (or /dev/null, a no-op)
   - ${SHARED_CREDENTIALS_PATH:-/dev/null}:/home/node/.claude-shared-credentials  # Optional: share one login across sessions (or /dev/null, a no-op)
@@ -111,11 +111,38 @@ volumes:
 
 **Important note:** The config volume mounts to `/home/node/.claude` (not `/root/.claude`), because the actual Claude Code process runs as the `node` user (UID/GID 1000 by default, non-root — set `PUID`/`PGID` in `.env` if your host user differs). It must be writable by that UID on the host — if `CONFIG_BASE_PATH` is unset it silently falls back to `./configs`, and Docker will auto-create that as root-owned on a brand-new session's first start. If that happens, the entrypoint rejects the unwritable directory at startup (see [Container restart loop](#container-restart-loop) below) instead of crash-looping silently — fix it with a one-time `chown -R <PUID>:<PGID> <CONFIG_BASE_PATH>/<REMOTE_SESSION_NAME>` on the host, or let `./scripts/new-session.sh`/`install.sh` create the directory for you up front with the right ownership.
 
+**`INSTANCE_CONFIG_PATH` (optional, additive):** an explicit path that, when set, is used directly as the config volume source instead of the `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` join — unset, every script (this mount, `backup.sh`, `restore.sh`, `status.sh`) resolves the config directory exactly as before this variable existed. Useful for a directory layout like `<root>/instances/<name>/claude` where the instance identity and its on-disk path are named independently of `CONFIG_BASE_PATH`. See `.env.example` and [Usage Patterns](usage-patterns.md). `./scripts/new-session.sh` deliberately clears an inherited `INSTANCE_CONFIG_PATH` when copying a `.env` as a template for a new session — copying it as-is would point the new session at the same directory as the one it was copied from.
+
 **On the `GITHUB_TOKEN_FILE`, `GLOBAL_CONFIG_PATH`, and `SHARED_CREDENTIALS_PATH` mounts:** unlike the first two, these are designed to always be present in the `volumes:` list, configured or not — `${VAR:-/dev/null}` is a standard Compose idiom for an "optional file mount": when the corresponding `.env` variable is unset, Compose mounts `/dev/null` instead (reads as empty, harmless). This matters more than it sounds for `GLOBAL_CONFIG_PATH` specifically: an earlier version of this line fell back to a real directory (`./shared-config`, since renamed to `GLOBAL_CONFIG_PATH`) instead, which Docker auto-created (root-owned) on the host even for operators who never touched the `GLOBAL_CONFIG_PATH` feature at all. `entrypoint.sh` only ever does `[ -f ... ]`/`[ -d ... ]` checks against the mounted path, both of which simply evaluate false when the target is `/dev/null` instead of a directory — same silent no-op as not mounting it. If you *do* set `GITHUB_TOKEN_FILE` to a host path, make sure the file actually exists there first — Docker auto-creates an empty **directory** at the mount target when the host source is missing, and `entrypoint.sh` detects and warns about that specific case (it can't read a directory as a token). `SHARED_CREDENTIALS_PATH` doesn't have this problem — see below, it's a directory mount specifically to avoid it.
 
-**On `SHARED_CREDENTIALS_PATH` specifically:** by default, every `REMOTE_SESSION_NAME` gets its own isolated credentials — even sessions sharing the same `CONFIG_BASE_PATH` still get separate subfolders (`CONFIG_BASE_PATH/<session>`), so each one prompts for its own login. `SHARED_CREDENTIALS_PATH` is the opt-in way around that: point every session's `.env` at the *same* host directory — it doesn't need to exist beforehand, Docker creates it empty on first use, unlike a single-file mount. It's mounted to a dedicated directory (`/home/node/.claude-shared-credentials`), not straight onto the session's own `.credentials.json`, because Compose can't express "mount this here, but only if the variable is set, otherwise leave whatever's already there alone" — instead, `entrypoint.sh` symlinks the session's own `~/.claude/.credentials.json` to a fixed file inside this mounted directory at startup (also checking the directory is writable by the container's user first; warns non-fatally and skips the link if not — this can happen if the host path didn't exist yet and Docker auto-created it root-owned).
+**On `SHARED_CREDENTIALS_PATH` specifically (`SHARED_CREDENTIALS_MODE=live`, the default — see [Shared Credentials Mode](#shared-credentials-mode) below for the `seed` alternative):** by default, every `REMOTE_SESSION_NAME` gets its own isolated credentials — even sessions sharing the same `CONFIG_BASE_PATH` still get separate subfolders (`CONFIG_BASE_PATH/<session>`), so each one prompts for its own login. `SHARED_CREDENTIALS_PATH` is the opt-in way around that: point every session's `.env` at the *same* host directory — it doesn't need to exist beforehand, Docker creates it empty on first use, unlike a single-file mount. It's mounted to a dedicated directory (`/home/node/.claude-shared-credentials`), not straight onto the session's own `.credentials.json`, because Compose can't express "mount this here, but only if the variable is set, otherwise leave whatever's already there alone" — instead, `entrypoint.sh` symlinks the session's own `~/.claude/.credentials.json` to a fixed file inside this mounted directory at startup (also checking the directory is writable by the container's user first; warns non-fatally and skips the link if not — this can happen if the host path didn't exist yet and Docker auto-created it root-owned).
 
 A symlink alone is not enough to keep this live: `claude` does not write `.credentials.json` in place, it writes a new file and `rename()`s it over the old path — which detaches whatever was there, including a symlink, exactly like it would replace any other file. A login (or Claude Code rotating its own token later) would otherwise silently strand the new credentials in the session's own directory, invisible to every other session pointed at `SHARED_CREDENTIALS_PATH`. `entrypoint.sh` also starts a small background poller (plain bash, no extra package) right after establishing the link: every 5 seconds it checks whether the session's file turned back into a regular file, and if so immediately promotes it into `SHARED_CREDENTIALS_PATH` and re-links, logging every time it happens (look for `Shared credentials` lines in `dock.log` or `docker logs`). Net effect: a login or token refresh leaves the file outside `SHARED_CREDENTIALS_PATH` for at most a few seconds, not until a restart. A restart is still needed for a session that was already running before `SHARED_CREDENTIALS_PATH` (or its shared file) was set up, since the symlink and its poller are only established once, at startup.
+
+**Known trade-off of live mode:** the shared file has no locking. If two sessions both promote a login into the pool close together in time, whichever finishes last wins — and because the link is *live*, not a one-time copy, every other session already linked to the pool immediately (and silently) starts resolving to that newer login too, not just new sessions started afterward. For a single operator logging into one session and letting the rest pick it up, this is not an issue in practice. It matters if you expect several sessions to each perform their own independent logins/refreshes against the same shared file. If you want to avoid this class of behavior entirely, see `seed` mode below.
+
+### Shared Credentials Mode
+
+`SHARED_CREDENTIALS_MODE` (default `live`) chooses between two different mechanisms once `SHARED_CREDENTIALS_PATH` is set — it has no effect at all when `SHARED_CREDENTIALS_PATH` is unset.
+
+| Mode | Mechanism | Sync | Promotion |
+|------|-----------|------|-----------|
+| `live` (default) | Symlink to `SHARED_CREDENTIALS_PATH`, described above | Automatic, continuous (background poller) | Automatic, on every login/refresh, from every session |
+| `seed` | One-time `cp` into the session's own `.credentials.json` at boot | Only at container startup, never again during that boot | Manual only: `./scripts/promote-credentials.sh [session-name]` |
+
+**`seed` mode**, in full:
+- On startup, if this session already has its own `.credentials.json`, `SHARED_CREDENTIALS_PATH` is not consulted at all — an existing login is never overwritten.
+- If this session has no login yet and `SHARED_CREDENTIALS_PATH` already holds one, it's copied in (a real file, not a symlink) — Claude starts already authenticated, no manual login needed.
+- If this session has no login yet and the shared pool is empty too, Claude prompts for login normally, exactly like `SHARED_CREDENTIALS_PATH` being unset.
+- Nothing about a login or token refresh happening *after* boot is ever synced automatically — there is no poller. To make this session's login available to other `seed`-mode sessions, run:
+  ```bash
+  ./scripts/promote-credentials.sh              # uses .env
+  ./scripts/promote-credentials.sh my-session    # uses .env.my-session
+  ```
+  This copies `<this session's config dir>/.credentials.json` into `SHARED_CREDENTIALS_PATH`, prompting for confirmation if the pool already holds different credentials (`--force` to skip). Sessions with an existing login of their own are unaffected either way; sessions with none pick up the new seed on their *next* start (restart/recreate) — not live.
+- Refuses to run against a session whose `.credentials.json` is a symlink (i.e. actually running `live` mode) — there's nothing to promote, since live mode already keeps the pool in sync automatically.
+
+**Choosing between them:** `live` is the simpler mental model (everyone always has the latest) at the cost of the no-locking trade-off above and a background process per session for its whole lifetime. `seed` trades that for explicit control — nothing changes in the shared pool unless an operator runs `promote-credentials.sh` — at the cost of needing that manual step after a login/refresh you want propagated, and a restart (not immediate) for sessions to pick up a new seed.
 
 ### Inspect volumes
 
@@ -160,6 +187,8 @@ your own `.env`; use this table when you need to know source/scope precisely.
 | `GIT_USER_NAME` / `GIT_USER_EMAIL` | `.env` | Git commit identity |
 | `GITHUB_TOKEN_FILE` | fixed literal | Always `/run/secrets/github_token` inside the container — the host path from `.env`'s `GITHUB_TOKEN_FILE` is only ever used to resolve the volume mount, never passed through directly. See [Git & GitHub Integration](git-integration.md) |
 | `GIT_REPO_URL` | `.env` | Repo to auto-clone into `/workspace` on first start |
+| `SHARED_CREDENTIALS_MODE` | `.env` | `live` (default) or `seed` — which `SHARED_CREDENTIALS_PATH` mechanism to use; a no-op when `SHARED_CREDENTIALS_PATH` is unset. See [Shared Credentials Mode](#shared-credentials-mode) |
+| `INSTANCE_CONFIG_PATH` | `.env` | Passed through for one purpose only: constructing an accurate `chown` hint in `entrypoint.sh`'s fatal error if the config directory isn't writable. The actual mount source is resolved by `docker-compose.yml`'s own interpolation on the host, before the container starts — see the host-only table below |
 | `TERM` / `LANG` / `LC_ALL` | `docker-compose.yml` | Terminal type / encoding |
 
 ```bash
@@ -177,6 +206,7 @@ directly. `docker exec claude-code-dock env` will never show these.
 |----------|---------|-------------|
 | `WORKSPACE_PATH` | `docker-compose.yml` volumes | Host path mounted at `/workspace` |
 | `CONFIG_BASE_PATH` | `docker-compose.yml` volumes | Base dir for per-session config, mounted at `/home/node/.claude` |
+| `INSTANCE_CONFIG_PATH` | `docker-compose.yml` volumes, `scripts/backup.sh`/`restore.sh`/`status.sh`/`new-session.sh`/`promote-credentials.sh` | Optional explicit override of the `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` join, resolved identically by every script via `scripts/lib/config-path.sh`. Additive — unset, every one of these resolves the config directory exactly as before this variable existed |
 | `GLOBAL_CONFIG_PATH` | `docker-compose.yml` volumes | Optional global `CLAUDE.md`/`commands/`/`skills/` dir, mounted read-only |
 | `SHARED_CREDENTIALS_PATH` | `docker-compose.yml` volumes | Optional host directory to share one Claude Code login across sessions instead of one per `REMOTE_SESSION_NAME`. Doesn't need to exist beforehand — created empty on first use |
 | `CLAUDE_DOCK_TAG` | `docker-compose.yml` `image:` | Published tag to pull (default `latest`; `stable` or a pinned `vX.Y.Z`) |
@@ -276,10 +306,23 @@ is a persistent misconfiguration rather than a wedged process (see
 
 ## Backups
 
-`scripts/backup.sh` archives `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (Claude
-Code credentials, always included) and `./workspaces/` (if not empty) into a
-`.tar.gz` under `./backups/`. It never schedules itself — every run is
-either manual or triggered by whatever calls it.
+`scripts/backup.sh` archives `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (or
+`INSTANCE_CONFIG_PATH` — Claude Code credentials/settings/history, always
+included) and `./workspaces/` (if not empty) into a `.tar.gz`. It never
+schedules itself — every run is either manual or triggered by whatever calls
+it. It does **not** back up an external `WORKSPACE_PATH` by default (that's
+usually managed by its own backup already) — pass `--include-workspace` to
+include it anyway.
+
+**Destination:** `./backups/<REMOTE_SESSION_NAME>/` once a session name is
+known — a subfolder per instance instead of one flat directory shared by
+every session. An unnamed/default session (no `REMOTE_SESSION_NAME` set)
+keeps the flat `./backups/` layout. `--output DIR` always wins outright and
+is used exactly as given, with no subfolder appended. `scripts/restore.sh`
+(`--list`, and the default "most recent backup" resolution) checks **both**
+the per-instance subfolder and the legacy flat location, so backups taken
+before this layout existed stay listable and restorable with no migration
+step needed.
 
 ```bash
 # One-off, manual
@@ -433,9 +476,59 @@ The recommended way to run multiple instances is `./scripts/new-session.sh`
 and a matching `-p claude-<name>` Compose project name, so you can't
 accidentally start session B under session A's `.env` by forgetting the flag),
 and `./scripts/sessions.sh` to list them all — see
-[Getting Started: Scripts](getting-started.md#scripts). The manual approach below (one
-hand-written compose file with several services) still works if you'd rather
-not use the helper scripts:
+[Getting Started: Scripts](getting-started.md#scripts). Want them to share
+one Claude Code login instead of logging into each separately? Set the same
+`SHARED_CREDENTIALS_PATH` in every session's `.env.<name>` — see [Shared
+Credentials Mode](#shared-credentials-mode) above for the two mechanisms
+(`live`, synced automatically; `seed`, provisioned once at boot plus
+`./scripts/promote-credentials.sh` to update the pool).
+
+### Recommended layout for several instances
+
+`INSTANCE_CONFIG_PATH` and `SHARED_CREDENTIALS_PATH`/`GITHUB_TOKEN_FILE`
+pointed at a common host directory let you organize several instances under
+one root, with a clear split between what's shared and what's per-instance —
+useful once you're running more than two or three:
+
+```
+<root>/                          e.g. /srv/claude-code-dock, or wherever
+│                                 your local checkout already lives if
+│                                 you build from CLAUDE_SOURCE_PATH
+├── shared/
+│   ├── claude-login/             <- SHARED_CREDENTIALS_PATH
+│   │   └── .credentials.json
+│   ├── github/                   <- GITHUB_TOKEN_FILE (if shared across instances)
+│   │   └── github_token.txt
+│   └── global-config/            <- GLOBAL_CONFIG_PATH (optional)
+│
+├── instances/
+│   ├── <instance-a>/claude/      <- INSTANCE_CONFIG_PATH for instance-a
+│   ├── <instance-b>/claude/      <- INSTANCE_CONFIG_PATH for instance-b
+│   └── <instance-n>/claude/
+│
+└── backups/                      <- backup.sh's default destination
+    ├── <instance-a>/
+    └── <instance-b>/
+```
+
+Each instance's `.env.<name>` (created via `./scripts/new-session.sh <name>`)
+sets `INSTANCE_CONFIG_PATH=<root>/instances/<name>/claude` explicitly —
+`new-session.sh` clears any `INSTANCE_CONFIG_PATH` copied from a template
+`.env` rather than silently pointing two instances at the same directory
+(see its entry in `CLAUDE.md` for why), so this is always a deliberate,
+per-instance value, not something that propagates automatically.
+`WORKSPACE_PATH` for each instance stays wherever that project's own files
+actually live — it is **not** part of this tree; only the Dock's own
+state/config/backups are.
+
+If you build from a local checkout (`CLAUDE_SOURCE_PATH`) rather than
+pulling the published image, that checkout directory is a natural home for
+this whole tree too — `backup.sh`'s default output directory is already
+relative to wherever `docker-compose.yml`/`scripts/` live, so keeping code
+and state under the same root avoids needing `--output` on every backup.
+
+The manual approach below (one hand-written compose file with several
+services) still works if you'd rather not use the helper scripts:
 
 ```yaml
 # Modified docker-compose.yml for multiple projects
@@ -576,6 +669,9 @@ docker ps --filter name=claude-code-dock
 
 # Backup (manual; set up your own host crontab entry for a daily schedule)
 ./scripts/backup.sh
+
+# Promote this session's login into SHARED_CREDENTIALS_PATH (SHARED_CREDENTIALS_MODE=seed only)
+./scripts/promote-credentials.sh
 
 # Apply CPU/memory limits (edit docker-compose.resources.yml first)
 docker compose -f docker-compose.yml -f docker-compose.resources.yml up -d

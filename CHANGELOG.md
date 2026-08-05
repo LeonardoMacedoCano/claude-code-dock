@@ -30,6 +30,50 @@ want to know what's actually changing.
   `~/.claude/skills/` at startup, mirroring the existing `commands/` handling
   (one symlink per skill directory, no merge step — same idiom `CLAUDE.md`'s
   merge-with-`CLAUDE-local.md` doesn't need since there's nothing to combine).
+- `INSTANCE_CONFIG_PATH`: optional, additive override of the
+  `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` join — an explicit path to this
+  instance's config directory, used directly when set. Unset, every script
+  (`docker-compose.yml`'s volume mount, `backup.sh`, `restore.sh`,
+  `status.sh`, `new-session.sh`) resolves the config directory exactly as
+  before this variable existed. `new-session.sh` clears an inherited
+  `INSTANCE_CONFIG_PATH` when copying a `.env` as a template for a new
+  session, rather than pointing the new session at the same directory as
+  the one it was copied from.
+- `SHARED_CREDENTIALS_MODE=seed`: opt-in alternative to
+  `SHARED_CREDENTIALS_PATH`'s original live symlink+background-poller
+  mechanism (still the `live` default, completely unchanged). `seed` copies
+  a shared login into a session's own credentials file once, at boot — no
+  live link, no poller, and no automatic promotion in the other direction.
+  Promoting a session's own login into the shared pool is now a separate,
+  explicit, host-side command: `./scripts/promote-credentials.sh
+  [session-name]`. Exists specifically to avoid a no-locking race in `live`
+  mode: since `live` mode's link is *live*, not a one-time copy, two
+  sessions promoting near-simultaneously can silently overwrite each
+  other's login for every already-linked session, not just new ones. See
+  [docs/docker.md](docs/docker.md#shared-credentials-mode).
+- `backups/<REMOTE_SESSION_NAME>/`: `scripts/backup.sh` now writes into a
+  per-instance subfolder by default once a session name is known, instead
+  of one flat `./backups/` directory shared by every session.
+  `--output DIR` always wins outright (no subfolder appended). An
+  unnamed/default session keeps the flat layout. `scripts/restore.sh`
+  (`--list` and the default "most recent backup" resolution) checks **both**
+  locations, so backups taken before this change stay listable and
+  restorable with no migration step.
+- [docs/usage-patterns.md](docs/usage-patterns.md): generic worked examples
+  for a Git-versioned project, a local workspace with no Git, and a
+  multi-project workspace — all already fully supported today, since
+  `GIT_REPO_URL`/`GITHUB_TOKEN_FILE`/`GIT_USER_NAME`/`GIT_USER_EMAIL` were
+  already independent and optional. No new variable needed.
+- [docs/git-integration.md](docs/git-integration.md): documented pointing
+  several sessions' `GITHUB_TOKEN_FILE` at the same shared token file as a
+  first-class supported pattern (alongside the existing per-instance
+  pattern) — no code change, `GITHUB_TOKEN_FILE` was already just an
+  arbitrary host path.
+- [docs/docker.md](docs/docker.md#recommended-layout-for-several-instances):
+  a recommended `shared/`/`instances/`/`backups/` directory layout tying
+  `INSTANCE_CONFIG_PATH`, `SHARED_CREDENTIALS_PATH`, `GITHUB_TOKEN_FILE`,
+  and `GLOBAL_CONFIG_PATH` together for operators running more than a
+  couple of instances.
 
 ### Fixed
 - `docs/getting-started.md` incorrectly claimed that pointing multiple
@@ -42,6 +86,10 @@ want to know what's actually changing.
   that behavior.
 
 ### Changed
+- `scripts/backup.sh`/`restore.sh`/`status.sh` now share one path-resolution
+  helper (`scripts/lib/config-path.sh`) instead of each having its own
+  copy-pasted `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` join logic with
+  subtly different edge-case handling.
 - **Breaking:** `SHARED_CONFIG_PATH` renamed to `GLOBAL_CONFIG_PATH` (mount
   target inside the container also renamed, from `~/.claude-shared` to
   `~/.claude-global`). "Shared" didn't distinguish this mount from every
