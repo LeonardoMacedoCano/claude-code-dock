@@ -202,10 +202,15 @@ validate_config() {
         local config_owner
         config_owner=$(stat -c '%U:%G (uid=%u, gid=%g)' "${HOME}/.claude" 2>/dev/null || echo "unknown")
         local config_host_path="<your CONFIG_BASE_PATH>/${REMOTE_SESSION_NAME:-<session>}"
-        [ -n "${CONFIG_BASE_PATH:-}" ] && [ -n "${REMOTE_SESSION_NAME:-}" ] && \
+        local config_mount_source_desc="CONFIG_BASE_PATH/REMOTE_SESSION_NAME"
+        if [ -n "${INSTANCE_CONFIG_PATH:-}" ]; then
+            config_host_path="${INSTANCE_CONFIG_PATH}"
+            config_mount_source_desc="INSTANCE_CONFIG_PATH"
+        elif [ -n "${CONFIG_BASE_PATH:-}" ] && [ -n "${REMOTE_SESSION_NAME:-}" ]; then
             config_host_path="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
+        fi
         fatal "Config directory is not writable" \
-            "/home/node/.claude (bind-mounted from CONFIG_BASE_PATH/REMOTE_SESSION_NAME on the host) is owned by ${BOLD}${config_owner}${RESET}, but this container runs as ${BOLD}node (uid=${target_uid}, gid=${target_gid})${RESET} and cannot write to it.\n\n  This almost always means the folder did not exist on the host yet, so Docker auto-created it as root the moment this container started." \
+            "/home/node/.claude (bind-mounted from ${config_mount_source_desc} on the host) is owned by ${BOLD}${config_owner}${RESET}, but this container runs as ${BOLD}node (uid=${target_uid}, gid=${target_gid})${RESET} and cannot write to it.\n\n  This almost always means the folder did not exist on the host yet, so Docker auto-created it as root the moment this container started." \
             "    Run this ON THE HOST (not inside the container), then restart:\n    ${BOLD}chown -R ${target_uid}:${target_gid} ${config_host_path}${RESET}\n    ${BOLD}docker compose up -d --force-recreate${RESET}\n\n    If CONFIG_BASE_PATH is not set in .env, set it first — otherwise it\n    silently falls back to ./configs, also created owned by root.\n    scripts/install.sh does this chown for you automatically on first setup (honoring PUID/PGID from .env if set)."
     fi
 
@@ -327,7 +332,42 @@ SHARED_CREDS_DIR="${HOME}/.claude-shared-credentials"
 SHARED_CREDS_FILE="${SHARED_CREDS_DIR}/.credentials.json"
 SESSION_CREDS="${HOME}/.claude/.credentials.json"
 
-if [ -d "${SHARED_CREDS_DIR}" ]; then
+# SHARED_CREDENTIALS_MODE gates which of the two mechanisms below runs.
+# Default ("live", also what an unset variable resolves to) is the
+# symlink+poller mechanism this whole block has always used -- completely
+# unchanged, so an existing install that has never heard of this variable
+# sees no behavior difference at all. "seed" is a newer, opt-in alternative:
+# a one-time copy from SHARED_CREDS_FILE into this session's own
+# .claude/.credentials.json at boot, with no live link and no background
+# poller -- promotion the other direction (this session's login becoming
+# the new seed for others) is a separate, explicit, operator-run action
+# (scripts/promote-credentials.sh), not automatic. This trades "every
+# session always has whatever the most recently refreshed token is" (live
+# mode's property, and also the source of its unlocked multi-writer race)
+# for "each session's credentials are its own after the first boot, and the
+# shared pool only changes when a human decides it should."
+SHARED_CREDENTIALS_MODE="${SHARED_CREDENTIALS_MODE:-live}"
+
+if [ -d "${SHARED_CREDS_DIR}" ] && [ "${SHARED_CREDENTIALS_MODE}" = "seed" ]; then
+    if ! ( touch "${SHARED_CREDS_DIR}/.write_test" 2>/dev/null && rm -f "${SHARED_CREDS_DIR}/.write_test" 2>/dev/null ); then
+        # Unlike live mode, there is no prior link to recover here -- a
+        # seed-mode session's own credentials (if any) are always a plain
+        # file it owns outright, never something that depends on this mount
+        # staying reachable. Non-fatal: this session still logs in/keeps
+        # working on its own, it just can't read a seed or be promoted from.
+        log_warn "SHARED_CREDENTIALS_PATH is not writable by this container's user -- credential seeding skipped. Fix on the host: chown -R ${PUID:-1000}:${PGID:-1000} <your SHARED_CREDENTIALS_PATH>, then docker compose up -d --force-recreate"
+    elif [ -f "${SESSION_CREDS}" ]; then
+        log_info "Shared credentials (seed mode): this session already has its own login -- SHARED_CREDENTIALS_PATH not consulted. Promote it explicitly with scripts/promote-credentials.sh if you want it to become the seed for other instances."
+    elif [ -s "${SHARED_CREDS_FILE}" ]; then
+        if cp "${SHARED_CREDS_FILE}" "${SESSION_CREDS}" 2>/dev/null; then
+            log_info "Shared credentials (seed mode): provisioned this session's login from SHARED_CREDENTIALS_PATH (one-time copy -- this session's credentials are now its own, not a live link)"
+        else
+            log_warn "Shared credentials (seed mode): found a seed in SHARED_CREDENTIALS_PATH but could not copy it into this session's config directory -- login will be required manually."
+        fi
+    else
+        log_info "Shared credentials (seed mode): no seed found in SHARED_CREDENTIALS_PATH yet -- this session will prompt for login. Promote it afterward with: scripts/promote-credentials.sh"
+    fi
+elif [ -d "${SHARED_CREDS_DIR}" ]; then
     if ! ( touch "${SHARED_CREDS_DIR}/.write_test" 2>/dev/null && rm -f "${SHARED_CREDS_DIR}/.write_test" 2>/dev/null ); then
         # Same class of issue as CONFIG_BASE_PATH/WORKSPACE_PATH in
         # validate_config() above -- a host directory that didn't exist yet

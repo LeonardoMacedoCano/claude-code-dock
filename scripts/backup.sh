@@ -5,9 +5,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 ENV_FILE="${PROJECT_DIR}/.env"
+# shellcheck source=lib/config-path.sh
+source "${SCRIPT_DIR}/lib/config-path.sh"
 
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR="${PROJECT_DIR}/backups"
+OUTPUT_DIR_EXPLICIT=false
 INCLUDE_WORKSPACE=false
 QUIET=false
 MASKED_ENV_TMPDIR=""
@@ -24,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --output)
             OUTPUT_DIR="$2"
+            OUTPUT_DIR_EXPLICIT=true
             shift 2
             ;;
         --include-workspace)
@@ -91,6 +95,7 @@ load_env() {
     : "${CONFIG_BASE_PATH:=}"
     : "${REMOTE_SESSION_NAME:=}"
     : "${WORKSPACE_PATH:=}"
+    : "${INSTANCE_CONFIG_PATH:=}"
 
     if [ -f "${ENV_FILE}" ]; then
         if [ -z "${CONFIG_BASE_PATH}" ]; then
@@ -102,19 +107,16 @@ load_env() {
         if [ -z "${WORKSPACE_PATH}" ]; then
             WORKSPACE_PATH=$(grep "^WORKSPACE_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
         fi
-    fi
-
-    if [[ "${CONFIG_BASE_PATH}" == ./* ]]; then
-        CONFIG_BASE_PATH="${PROJECT_DIR}/${CONFIG_BASE_PATH#./}"
+        if [ -z "${INSTANCE_CONFIG_PATH}" ]; then
+            INSTANCE_CONFIG_PATH=$(grep "^INSTANCE_CONFIG_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+        fi
     fi
 
     if [[ "${WORKSPACE_PATH}" == ./* ]]; then
         WORKSPACE_PATH="${PROJECT_DIR}/${WORKSPACE_PATH#./}"
     fi
 
-    if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
-        CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
-    else
+    if ! resolve_config_dir; then
         CONFIG_DIR="${PROJECT_DIR}/configs/default"
         warn "CONFIG_BASE_PATH or REMOTE_SESSION_NAME not set — using fallback: ${CONFIG_DIR}"
     fi
@@ -122,6 +124,16 @@ load_env() {
     if [ -n "${REMOTE_SESSION_NAME}" ]; then
         BACKUP_NAME="claude-code-dock-${REMOTE_SESSION_NAME}-backup-${TIMESTAMP}"
         BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
+        # Per-instance subfolder instead of the legacy flat ./backups/ layout
+        # -- only when the operator didn't already pick an exact destination
+        # with --output, and only once REMOTE_SESSION_NAME is known (an
+        # unnamed/default session keeps the flat layout, matching how
+        # BACKUP_PATTERN itself already branches on this). restore.sh checks
+        # both this location and the legacy flat one, so existing backups
+        # taken before this change stay listable/restorable.
+        if [ "${OUTPUT_DIR_EXPLICIT}" = "false" ]; then
+            OUTPUT_DIR="${OUTPUT_DIR}/${REMOTE_SESSION_NAME}"
+        fi
     else
         BACKUP_NAME="claude-code-dock-backup-${TIMESTAMP}"
         BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
