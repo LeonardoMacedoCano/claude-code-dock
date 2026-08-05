@@ -15,7 +15,7 @@ setup() {
   # Same rationale as backup_retention.bats: don't let this suite inherit
   # CONFIG_BASE_PATH/REMOTE_SESSION_NAME/WORKSPACE_PATH from whatever
   # environment happens to be running it.
-  unset CONFIG_BASE_PATH REMOTE_SESSION_NAME WORKSPACE_PATH
+  unset CONFIG_BASE_PATH REMOTE_SESSION_NAME WORKSPACE_PATH INSTANCE_CONFIG_PATH
 
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
@@ -31,7 +31,9 @@ setup() {
 
   # Copied into place (not run from PROJECT_ROOT directly) so PROJECT_DIR
   # inside each script resolves to TMP_PROJECT -- matching how
-  # backup_retention.bats isolates itself.
+  # backup_retention.bats isolates itself. lib/ is copied alongside since
+  # both scripts source scripts/lib/config-path.sh relative to SCRIPT_DIR.
+  cp -r "$PROJECT_ROOT/scripts/lib" "$TMP_PROJECT/scripts/lib"
   cp "$BACKUP_SCRIPT" "$TMP_PROJECT/scripts/backup.sh"
   cp "$RESTORE_SCRIPT" "$TMP_PROJECT/scripts/restore.sh"
 
@@ -43,7 +45,7 @@ teardown() {
 }
 
 _latest_archive() {
-  ls -t "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1
+  ls -t "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1
 }
 
 @test "restore roundtrip: corrupted data is restored byte-for-byte from backup" {
@@ -78,7 +80,7 @@ _latest_archive() {
   run bash -c "echo y | bash '$TMP_PROJECT/scripts/restore.sh' '$ARCHIVE'"
   [ "$status" -eq 0 ]
 
-  SAFETY_COUNT=$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-pre-restore-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')
+  SAFETY_COUNT=$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-pre-restore-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')
   [ "$SAFETY_COUNT" -eq 1 ]
 }
 
