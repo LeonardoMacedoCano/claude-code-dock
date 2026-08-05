@@ -92,6 +92,7 @@ That covers the default setup. Want GitHub push/pull from inside the container, 
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | `.env` profiles, step-by-step setup, execution modes, scripts reference |
+| [Usage Patterns](docs/usage-patterns.md) | Git-versioned, local (no Git), and multi-project instance examples |
 | [Docker Reference](docs/docker.md) | Docker commands, volumes, logs, **full environment variable reference** |
 | [Git & GitHub Integration](docs/git-integration.md) | Commit identity, push/pull auth, auto-clone on startup |
 | [Unraid Guide](docs/unraid.md) | Complete Unraid setup |
@@ -104,6 +105,7 @@ That covers the default setup. Want GitHub push/pull from inside the container, 
 | Document | Description |
 |----------|-------------|
 | [Architecture](docs/architecture.md) | tmux/PID 1 design, data flow, technical decisions |
+| [Multi-Instance Architecture Proposal](docs/multi-instance-architecture-proposal.md) | **Draft, under review — not implemented.** Planning doc for reorganizing shared/instance/backup state and the credential-sharing mechanism |
 | [CONTRIBUTING](CONTRIBUTING.md) | Dev setup, test suite, PR checklist |
 | [CLAUDE.md](CLAUDE.md) | Deep rationale reference for contributors and AI agents |
 
