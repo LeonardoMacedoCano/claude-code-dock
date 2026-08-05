@@ -92,6 +92,7 @@ That covers the default setup. Want GitHub push/pull from inside the container, 
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | `.env` profiles, step-by-step setup, execution modes, scripts reference |
+| [Usage Patterns](docs/usage-patterns.md) | Git-versioned, local (no Git), and multi-project instance examples; shared root layout for several instances |
 | [Docker Reference](docs/docker.md) | Docker commands, volumes, logs, **full environment variable reference** |
 | [Git & GitHub Integration](docs/git-integration.md) | Commit identity, push/pull auth, auto-clone on startup |
 | [Unraid Guide](docs/unraid.md) | Complete Unraid setup |
