@@ -98,7 +98,6 @@ That covers the default setup. Want GitHub push/pull from inside the container, 
 | [Unraid Guide](docs/unraid.md) | Complete Unraid setup |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and solutions |
 | [Security](docs/security.md) | Credential protection, remote access |
-| [CHANGELOG](CHANGELOG.md) | What changed recently — check before `./scripts/update.sh` |
 
 **Understanding or changing it:**
 
