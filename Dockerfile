@@ -64,20 +64,25 @@ RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# node:lts-bookworm bundles whatever npm version shipped with that Node
-# release, which lags npm's own releases -- its vendored `tar` dependency
-# is what the Trivy scan step in CI (docker-publish.yml) flags CRITICAL CVEs
-# against (e.g. CVE-2026-59873). Updating npm itself picks up its latest
-# vendored dependency versions, same freshness rationale as the apt-get
-# upgrade above.
-RUN echo "cachebust=${CACHEBUST}" > /dev/null && npm install -g npm@latest
-
 ARG CLAUDE_CODE_VERSION=latest
 RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
     npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} --no-update-notifier && \
     grep '"version"' /usr/local/lib/node_modules/@anthropic-ai/claude-code/package.json \
         | head -1 | awk -F'"' '{print $4}' \
         > /etc/claude-code-version 2>/dev/null || echo "unknown" > /etc/claude-code-version
+
+# node:lts-bookworm bundles whatever npm version shipped with that Node
+# release, which lags npm's own releases -- its vendored `tar` dependency
+# is what the Trivy scan step in CI (docker-publish.yml) flags CRITICAL CVEs
+# against (e.g. CVE-2026-59873). Updating npm itself picks up its latest
+# vendored dependency versions, same freshness rationale as the apt-get
+# upgrade above. Must run AFTER the claude-code install above, not before:
+# doing it first broke resolution of claude-code's platform-native optional
+# dependency (the postinstall silently failed to link the native binary,
+# see tests/smoke.sh CI failures). The two live in separate global
+# node_modules trees (npm itself vs @anthropic-ai/claude-code), so ordering
+# it last does not affect what's already installed.
+RUN echo "cachebust=${CACHEBUST}" > /dev/null && npm install -g npm@latest
 
 # Records whether this image came from a local clone (CLAUDE_SOURCE_PATH, used
 # to test claude-code-dock changes before pushing) or a GitHub ref, so
