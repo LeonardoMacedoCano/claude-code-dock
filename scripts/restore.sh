@@ -108,6 +108,10 @@ list_backups() {
         exit 0
     fi
 
+    # Word splitting is the point here: each line _backup_search_paths()
+    # prints is meant to become its own glob argument to ls, and a glob
+    # pattern must stay unquoted to actually expand.
+    # shellcheck disable=SC2046
     BACKUPS=$(ls -1t $(_backup_search_paths) 2>/dev/null || echo "")
 
     if [ -z "${BACKUPS}" ]; then
@@ -143,6 +147,8 @@ case "${1:-}" in
         DRY_RUN=true
         BACKUP_FILE="${2:-}"
         if [ -z "${BACKUP_FILE}" ]; then
+            # See the BACKUPS= assignment above -- same reason.
+            # shellcheck disable=SC2046
             LATEST=$(ls -1t $(_backup_search_paths) 2>/dev/null | head -1 || echo "")
             if [ -z "${LATEST}" ]; then
                 echo ""
@@ -159,6 +165,8 @@ case "${1:-}" in
         exit 0
         ;;
     "")
+        # See the BACKUPS= assignment above -- same reason.
+        # shellcheck disable=SC2046
         LATEST=$(ls -1t $(_backup_search_paths) 2>/dev/null | head -1 || echo "")
         if [ -z "${LATEST}" ]; then
             echo ""
