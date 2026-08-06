@@ -216,33 +216,11 @@ create_backup_archive() {
     local has_workspace=false
     local config_tar_dir=""
     local config_tar_name=""
-    local stage_dir=""
 
     if [ -d "${CONFIG_DIR}" ] && [ -n "$(ls -A "${CONFIG_DIR}" 2>/dev/null)" ]; then
         has_config=true
         config_tar_dir="$(dirname "${CONFIG_DIR}")"
         config_tar_name="$(basename "${CONFIG_DIR}")"
-
-        # A session using SHARED_CREDENTIALS_PATH has .credentials.json
-        # symlinked outside CONFIG_DIR (see docker/entrypoint.sh) -- `tar`
-        # stores a symlink as just its target path, not the file it points
-        # to, so taring CONFIG_DIR as-is would silently produce a backup
-        # with no actual login in it. Stage a copy with only that one file
-        # dereferenced. Every other symlink under CONFIG_DIR (global
-        # commands/skills from GLOBAL_CONFIG_PATH) is left as a symlink on
-        # purpose: those are regenerated from their source on every
-        # container startup, not unique state, so preserving the link
-        # instead of the content is correct for them.
-        local creds_link="${CONFIG_DIR}/.credentials.json"
-        if [ -L "${creds_link}" ]; then
-            stage_dir=$(mktemp -d)
-            cp -a "${CONFIG_DIR}" "${stage_dir}/${config_tar_name}"
-            rm -f "${stage_dir}/${config_tar_name}/.credentials.json"
-            if [ -s "${creds_link}" ]; then
-                cp -L "${creds_link}" "${stage_dir}/${config_tar_name}/.credentials.json"
-            fi
-            config_tar_dir="${stage_dir}"
-        fi
     fi
     BACKUP_HAS_CONFIG="${has_config}"
 
@@ -280,7 +258,6 @@ create_backup_archive() {
 
     "${tar_cmd[@]}"
 
-    [ -n "${stage_dir}" ] && rm -rf "${stage_dir}"
     [ -n "${MASKED_ENV_TMPDIR}" ] && rm -rf "${MASKED_ENV_TMPDIR}"
 
     BACKUP_SIZE=$(du -sh "${BACKUP_FILE}" 2>/dev/null | cut -f1 || echo "unknown")

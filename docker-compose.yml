@@ -23,7 +23,6 @@ services:
       - GIT_USER_EMAIL=${GIT_USER_EMAIL:-}
       - GITHUB_TOKEN_FILE=/run/secrets/github_token
       - GIT_REPO_URL=${GIT_REPO_URL:-}
-      - SHARED_CREDENTIALS_MODE=${SHARED_CREDENTIALS_MODE:-live}
       - TERM=xterm-256color
       - LANG=C.UTF-8
       - LC_ALL=C.UTF-8
@@ -32,7 +31,6 @@ services:
       - ${INSTANCE_CONFIG_PATH:-${CONFIG_BASE_PATH:-./configs}/${REMOTE_SESSION_NAME:-default}}:/home/node/.claude
       - ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro
       - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro
-      - ${SHARED_CREDENTIALS_PATH:-/dev/null}:/home/node/.claude-shared-credentials
     stdin_open: true
     tty: true
     restart: unless-stopped
