@@ -2,7 +2,7 @@
 
 ## Overview
 
-claude-code-dock implements a "persistent process in container" pattern, where Claude Code runs inside a tmux session (PID 1 = tmux) in a Docker container that restarts automatically. The user connects and disconnects via `tmux attach-session` without interrupting the session.
+claude-code-dock implements a "persistent process in container" pattern, where Claude Code runs inside a tmux session (PID 1 = tmux) in a Docker container that restarts automatically. The user connects and disconnects via `tmux attach-session` without interrupting the session — and because login, conversation history, and settings live in bind-mounted host directories rather than the container's own writable layer, they survive not just a disconnect but a container crash, a host reboot, or an image update (`restart: unless-stopped`), with nothing lost and no re-authentication needed. See [Persistence & Login](../CLAUDE.md#persistence--login) for the full mechanism.
 
 ```
 +---------------------------------------------------------------+
