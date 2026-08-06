@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       promote_stable:
@@ -74,6 +76,13 @@ jobs:
 
   build-and-push:
     needs: [test, smoke-test]
+    # Never publish from a pull_request event -- test/smoke-test above still
+    # run on PRs (that's the whole point of adding pull_request: above, so a
+    # lint/test failure surfaces before merge instead of only after), but
+    # actually building and pushing an image should stay tied to something
+    # that already landed on main (or an explicit tag/workflow_dispatch run),
+    # not to an open PR branch that could still change.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
