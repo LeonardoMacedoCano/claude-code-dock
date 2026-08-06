@@ -41,6 +41,27 @@ path does. The file's *content* is still readable via `docker exec
 access on this host, same trust boundary as any other bind-mounted file. See
 [Security](security.md#credential-protection) for the full threat model.
 
+## Sharing one token across several instances
+
+`GITHUB_TOKEN_FILE` is just a host path — nothing about it is
+session-specific. Two legitimate patterns, both already fully supported with
+no extra configuration:
+
+- **Per-instance token:** each session's `.env` points at its own token
+  file (e.g. `instances/<name>/github_token.txt`), scoped to only the
+  repo(s) that instance touches.
+- **Shared token:** several sessions' `.env` files all point at the *same*
+  file (e.g. `shared/github/github_token.txt`) — useful when every instance
+  pushes/pulls under the same GitHub identity and there's no reason to keep
+  separate tokens around.
+
+Pick whichever matches how you actually think about your instances; nothing
+in claude-code-dock enforces one over the other. Sharing does widen blast
+radius — a leak from any one instance exposes the
+token to whatever it can reach, not just that instance's own repo(s) — so
+prefer a token scoped as narrowly as the *widest* thing any sharing instance
+actually needs, not the narrowest.
+
 ## Auto-clone on startup
 
 Set `GIT_REPO_URL` to an HTTPS URL and the container clones the repository

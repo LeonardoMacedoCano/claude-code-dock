@@ -5,9 +5,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 ENV_FILE="${PROJECT_DIR}/.env"
+# shellcheck source=lib/config-path.sh
+source "${SCRIPT_DIR}/lib/config-path.sh"
 
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR="${PROJECT_DIR}/backups"
+OUTPUT_DIR_EXPLICIT=false
 INCLUDE_WORKSPACE=false
 QUIET=false
 MASKED_ENV_TMPDIR=""
@@ -24,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --output)
             OUTPUT_DIR="$2"
+            OUTPUT_DIR_EXPLICIT=true
             shift 2
             ;;
         --include-workspace)
@@ -91,6 +95,7 @@ load_env() {
     : "${CONFIG_BASE_PATH:=}"
     : "${REMOTE_SESSION_NAME:=}"
     : "${WORKSPACE_PATH:=}"
+    : "${INSTANCE_CONFIG_PATH:=}"
 
     if [ -f "${ENV_FILE}" ]; then
         if [ -z "${CONFIG_BASE_PATH}" ]; then
@@ -102,19 +107,16 @@ load_env() {
         if [ -z "${WORKSPACE_PATH}" ]; then
             WORKSPACE_PATH=$(grep "^WORKSPACE_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
         fi
-    fi
-
-    if [[ "${CONFIG_BASE_PATH}" == ./* ]]; then
-        CONFIG_BASE_PATH="${PROJECT_DIR}/${CONFIG_BASE_PATH#./}"
+        if [ -z "${INSTANCE_CONFIG_PATH}" ]; then
+            INSTANCE_CONFIG_PATH=$(grep "^INSTANCE_CONFIG_PATH=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '"' | tr -d "'" 2>/dev/null || echo "")
+        fi
     fi
 
     if [[ "${WORKSPACE_PATH}" == ./* ]]; then
         WORKSPACE_PATH="${PROJECT_DIR}/${WORKSPACE_PATH#./}"
     fi
 
-    if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
-        CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
-    else
+    if ! resolve_config_dir; then
         CONFIG_DIR="${PROJECT_DIR}/configs/default"
         warn "CONFIG_BASE_PATH or REMOTE_SESSION_NAME not set — using fallback: ${CONFIG_DIR}"
     fi
@@ -122,6 +124,16 @@ load_env() {
     if [ -n "${REMOTE_SESSION_NAME}" ]; then
         BACKUP_NAME="claude-code-dock-${REMOTE_SESSION_NAME}-backup-${TIMESTAMP}"
         BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
+        # Per-instance subfolder instead of the legacy flat ./backups/ layout
+        # -- only when the operator didn't already pick an exact destination
+        # with --output, and only once REMOTE_SESSION_NAME is known (an
+        # unnamed/default session keeps the flat layout, matching how
+        # BACKUP_PATTERN itself already branches on this). restore.sh checks
+        # both this location and the legacy flat one, so existing backups
+        # taken before this change stay listable/restorable.
+        if [ "${OUTPUT_DIR_EXPLICIT}" = "false" ]; then
+            OUTPUT_DIR="${OUTPUT_DIR}/${REMOTE_SESSION_NAME}"
+        fi
     else
         BACKUP_NAME="claude-code-dock-backup-${TIMESTAMP}"
         BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
@@ -204,33 +216,11 @@ create_backup_archive() {
     local has_workspace=false
     local config_tar_dir=""
     local config_tar_name=""
-    local stage_dir=""
 
     if [ -d "${CONFIG_DIR}" ] && [ -n "$(ls -A "${CONFIG_DIR}" 2>/dev/null)" ]; then
         has_config=true
         config_tar_dir="$(dirname "${CONFIG_DIR}")"
         config_tar_name="$(basename "${CONFIG_DIR}")"
-
-        # A session using SHARED_CREDENTIALS_PATH has .credentials.json
-        # symlinked outside CONFIG_DIR (see docker/entrypoint.sh) -- `tar`
-        # stores a symlink as just its target path, not the file it points
-        # to, so taring CONFIG_DIR as-is would silently produce a backup
-        # with no actual login in it. Stage a copy with only that one file
-        # dereferenced. Every other symlink under CONFIG_DIR (global
-        # commands/skills from GLOBAL_CONFIG_PATH) is left as a symlink on
-        # purpose: those are regenerated from their source on every
-        # container startup, not unique state, so preserving the link
-        # instead of the content is correct for them.
-        local creds_link="${CONFIG_DIR}/.credentials.json"
-        if [ -L "${creds_link}" ]; then
-            stage_dir=$(mktemp -d)
-            cp -a "${CONFIG_DIR}" "${stage_dir}/${config_tar_name}"
-            rm -f "${stage_dir}/${config_tar_name}/.credentials.json"
-            if [ -s "${creds_link}" ]; then
-                cp -L "${creds_link}" "${stage_dir}/${config_tar_name}/.credentials.json"
-            fi
-            config_tar_dir="${stage_dir}"
-        fi
     fi
     BACKUP_HAS_CONFIG="${has_config}"
 
@@ -268,7 +258,6 @@ create_backup_archive() {
 
     "${tar_cmd[@]}"
 
-    [ -n "${stage_dir}" ] && rm -rf "${stage_dir}"
     [ -n "${MASKED_ENV_TMPDIR}" ] && rm -rf "${MASKED_ENV_TMPDIR}"
 
     BACKUP_SIZE=$(du -sh "${BACKUP_FILE}" 2>/dev/null | cut -f1 || echo "unknown")

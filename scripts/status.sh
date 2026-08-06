@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 ENV_FILE="${PROJECT_DIR}/.env"
+# shellcheck source=lib/config-path.sh
+source "${SCRIPT_DIR}/lib/config-path.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,13 +24,14 @@ fi
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 REMOTE_SESSION_NAME="${REMOTE_SESSION_NAME:-}"
 CONFIG_BASE_PATH="${CONFIG_BASE_PATH:-}"
+INSTANCE_CONFIG_PATH="${INSTANCE_CONFIG_PATH:-}"
 
-if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
-    if [[ "${CONFIG_BASE_PATH}" == ./* ]]; then
-        CONFIG_BASE_PATH="${PROJECT_DIR}/${CONFIG_BASE_PATH#./}"
+if resolve_config_dir; then
+    if [ -n "${REMOTE_SESSION_NAME}" ]; then
+        BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
+    else
+        BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
     fi
-    CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
-    BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
 else
     CONFIG_DIR="${PROJECT_DIR}/configs/default"
     BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
@@ -153,14 +156,24 @@ echo ""
 # --- Backups ---
 echo -e "  ${CYAN}Backups${RESET}"
 BACKUP_DIR="${PROJECT_DIR}/backups"
-if [ -d "${BACKUP_DIR}" ]; then
+# Per-instance subfolder (backup.sh writes here once REMOTE_SESSION_NAME is
+# known) plus the legacy flat BACKUP_DIR -- same two-location search as
+# restore.sh's _backup_search_paths(), so backups taken before that change
+# still count here too.
+INSTANCE_BACKUP_DIR="${BACKUP_DIR}"
+if [ -n "${REMOTE_SESSION_NAME}" ]; then
+    INSTANCE_BACKUP_DIR="${BACKUP_DIR}/${REMOTE_SESSION_NAME}"
+fi
+if [ -d "${BACKUP_DIR}" ] || [ -d "${INSTANCE_BACKUP_DIR}" ]; then
+    BACKUP_GLOBS=("${BACKUP_DIR}/${BACKUP_PATTERN}")
+    [ "${INSTANCE_BACKUP_DIR}" != "${BACKUP_DIR}" ] && BACKUP_GLOBS+=("${INSTANCE_BACKUP_DIR}/${BACKUP_PATTERN}")
     # `ls` on a non-matching glob exits non-zero even with 2>/dev/null; under
     # this script's `set -o pipefail`, that would otherwise abort the whole
     # script right here (a bare `VAR=$(...)` assignment failing under `set
     # -e`) whenever backups/ exists but is still empty -- a normal state
     # before the first backup is ever taken, not an error.
-    BACKUP_COUNT=$( { ls -1 "${BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null || true; } | wc -l)
-    LATEST_BACKUP=$(ls -1t "${BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | head -1 || echo "")
+    BACKUP_COUNT=$( { ls -1 "${BACKUP_GLOBS[@]}" 2>/dev/null || true; } | wc -l)
+    LATEST_BACKUP=$(ls -1t "${BACKUP_GLOBS[@]}" 2>/dev/null | head -1 || echo "")
     row "Total backups:" "${BACKUP_COUNT}"
     if [ -n "${LATEST_BACKUP}" ]; then
         row "Latest:" "$(basename "${LATEST_BACKUP}")"

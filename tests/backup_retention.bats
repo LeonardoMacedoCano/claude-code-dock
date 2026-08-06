@@ -12,7 +12,7 @@ setup() {
   # happens to have set (e.g. this very suite can run inside a
   # claude-code-dock container, which exports exactly these three), or the
   # test's own throwaway .env would be silently ignored.
-  unset CONFIG_BASE_PATH REMOTE_SESSION_NAME WORKSPACE_PATH
+  unset CONFIG_BASE_PATH REMOTE_SESSION_NAME WORKSPACE_PATH INSTANCE_CONFIG_PATH
 
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
@@ -26,6 +26,9 @@ setup() {
 
   printf 'CONFIG_BASE_PATH=./configs\nREMOTE_SESSION_NAME=%s\n' "$SESSION" > "$TMP_PROJECT/.env"
 
+  # lib/ copied alongside since backup.sh sources scripts/lib/config-path.sh
+  # relative to SCRIPT_DIR.
+  cp -r "$PROJECT_ROOT/scripts/lib" "$TMP_PROJECT/scripts/lib"
   cp "$BACKUP_SCRIPT" "$TMP_PROJECT/scripts/backup.sh"
 
   export TMP_PROJECT
@@ -41,9 +44,10 @@ _backup_pattern() {
 
 _create_old_backups() {
   local count="$1"
+  mkdir -p "$TMP_PROJECT/backups/$SESSION"
   for i in $(seq 1 "$count"); do
     local name
-    name="$TMP_PROJECT/backups/claude-code-dock-${SESSION}-backup-2024-01-$(printf '%02d' "$i")_00-00-00.tar.gz"
+    name="$TMP_PROJECT/backups/$SESSION/claude-code-dock-${SESSION}-backup-2024-01-$(printf '%02d' "$i")_00-00-00.tar.gz"
     touch "$name"
     touch -d "2024-01-$(printf '%02d' "$i") 00:00:00" "$name"
   done
@@ -55,7 +59,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  REMAINING="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
+  REMAINING="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
   [ "$REMAINING" -eq 10 ]
 }
 
@@ -65,7 +69,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  REMAINING="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
+  REMAINING="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
   [ "$REMAINING" -eq 10 ]
 }
 
@@ -75,7 +79,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  ARCHIVES="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
+  ARCHIVES="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
   [ "$ARCHIVES" -eq 0 ]
 }
 
@@ -83,7 +87,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  COUNT="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
+  COUNT="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
   [ "$COUNT" -eq 1 ]
 }
 
@@ -91,7 +95,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  ARCHIVE="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
   [ -n "$ARCHIVE" ]
   tar -tzf "$ARCHIVE" | grep -q "${SESSION}/settings.json"
 }
@@ -100,7 +104,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  ARCHIVE="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
   [ -n "$ARCHIVE" ]
 }
 
@@ -110,7 +114,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  ARCHIVE="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
   [ -n "$ARCHIVE" ]
 
   EXTRACT_DIR="$(mktemp -d)"
@@ -128,7 +132,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  ARCHIVE="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
   [ -n "$ARCHIVE" ]
 
   EXTRACT_DIR="$(mktemp -d)"
@@ -157,7 +161,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  ARCHIVE="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
   [ -n "$ARCHIVE" ]
   tar -tzf "$ARCHIVE" | grep -q "${SESSION}/settings.json"
 
@@ -170,7 +174,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  ARCHIVE="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
+  ARCHIVE="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | head -1)"
   [ -n "$ARCHIVE" ]
 
   EXTRACT_DIR="$(mktemp -d)"
@@ -189,7 +193,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  REMAINING="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
+  REMAINING="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
   [ "$REMAINING" -eq 5 ]
   unset BACKUP_RETENTION
 }
@@ -203,7 +207,7 @@ _create_old_backups() {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]
 
-  SESSION_COUNT="$(ls "$TMP_PROJECT/backups"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
+  SESSION_COUNT="$(ls "$TMP_PROJECT/backups/$SESSION"/claude-code-dock-${SESSION}-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
   OTHER_COUNT="$(ls "$TMP_PROJECT/backups"/claude-code-dock-other-session-backup-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')"
   [ "$SESSION_COUNT" -eq 10 ]
   [ "$OTHER_COUNT" -eq 12 ]

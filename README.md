@@ -51,7 +51,7 @@ AUTO_START_MODE=remote
 
 From Claude.ai Remote Control, select `HomePage` and ask: *"Update the About page with my new contact info."* Claude is running directly on the server, in the production folder, with your files — from your phone, from anywhere.
 
-One server can run any number of containers, each with its own project and session name, all sharing the same Claude login.
+One server can run any number of containers, each with its own project, session name, and login.
 
 ---
 
@@ -92,12 +92,12 @@ That covers the default setup. Want GitHub push/pull from inside the container, 
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/getting-started.md) | `.env` profiles, step-by-step setup, execution modes, scripts reference |
+| [Usage Patterns](docs/usage-patterns.md) | Git-versioned, local (no Git), and multi-project instance examples; shared root layout for several instances |
 | [Docker Reference](docs/docker.md) | Docker commands, volumes, logs, **full environment variable reference** |
 | [Git & GitHub Integration](docs/git-integration.md) | Commit identity, push/pull auth, auto-clone on startup |
 | [Unraid Guide](docs/unraid.md) | Complete Unraid setup |
 | [Troubleshooting](docs/troubleshooting.md) | Common problems and solutions |
 | [Security](docs/security.md) | Credential protection, remote access |
-| [CHANGELOG](CHANGELOG.md) | What changed recently — check before `./scripts/update.sh` |
 
 **Understanding or changing it:**
 

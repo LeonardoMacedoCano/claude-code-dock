@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 DEFAULT_BACKUP_DIR="${PROJECT_DIR}/backups"
 ENV_FILE="${PROJECT_DIR}/.env"
+# shellcheck source=lib/config-path.sh
+source "${SCRIPT_DIR}/lib/config-path.sh"
 
 if [ -f "${ENV_FILE}" ]; then
     set -a
@@ -17,16 +19,29 @@ CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 
 CONFIG_BASE_PATH="${CONFIG_BASE_PATH:-}"
 REMOTE_SESSION_NAME="${REMOTE_SESSION_NAME:-}"
+INSTANCE_CONFIG_PATH="${INSTANCE_CONFIG_PATH:-}"
 
-if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
-    if [[ "${CONFIG_BASE_PATH}" == ./* ]]; then
-        CONFIG_BASE_PATH="${PROJECT_DIR}/${CONFIG_BASE_PATH#./}"
+if resolve_config_dir; then
+    if [ -n "${REMOTE_SESSION_NAME}" ]; then
+        BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
+    else
+        BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
     fi
-    CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
-    BACKUP_PATTERN="claude-code-dock-${REMOTE_SESSION_NAME}-backup-*.tar.gz"
 else
     CONFIG_DIR="${PROJECT_DIR}/configs/default"
     BACKUP_PATTERN="claude-code-dock-backup-*.tar.gz"
+fi
+
+# backup.sh (as of the backups/<instance>/ change) writes new backups into a
+# per-instance subfolder once REMOTE_SESSION_NAME is known, instead of the
+# legacy flat ./backups/ layout. INSTANCE_BACKUP_DIR is that subfolder;
+# DEFAULT_BACKUP_DIR (defined above) stays the flat legacy location so
+# backups taken before this change (or with --output pointed elsewhere) stay
+# listable/restorable -- see _backup_search_paths() below, used everywhere
+# this script globs for backup files.
+INSTANCE_BACKUP_DIR="${DEFAULT_BACKUP_DIR}"
+if [ -n "${REMOTE_SESSION_NAME}" ]; then
+    INSTANCE_BACKUP_DIR="${DEFAULT_BACKUP_DIR}/${REMOTE_SESSION_NAME}"
 fi
 
 RED='\033[0;31m'
@@ -61,21 +76,39 @@ fail() {
     exit 1
 }
 
+# Echoes one glob pattern per directory that could hold this instance's
+# backups: the new per-instance INSTANCE_BACKUP_DIR, and (when it differs)
+# the legacy flat DEFAULT_BACKUP_DIR -- so a backup taken before the
+# backups/<instance>/ change, or with an unnamed/default session, is never
+# silently invisible to --list/restore. Meant to be used unquoted
+# ($(_backup_search_paths)) so each line's glob actually expands as a
+# command argument.
+_backup_search_paths() {
+    if [ "${INSTANCE_BACKUP_DIR}" != "${DEFAULT_BACKUP_DIR}" ]; then
+        printf '%s\n' "${INSTANCE_BACKUP_DIR}/${BACKUP_PATTERN}"
+    fi
+    printf '%s\n' "${DEFAULT_BACKUP_DIR}/${BACKUP_PATTERN}"
+}
+
 list_backups() {
     echo ""
-    echo -e "${CYAN}${BOLD}Available backups in ${DEFAULT_BACKUP_DIR}:${RESET}"
+    if [ "${INSTANCE_BACKUP_DIR}" != "${DEFAULT_BACKUP_DIR}" ]; then
+        echo -e "${CYAN}${BOLD}Available backups in ${INSTANCE_BACKUP_DIR} and ${DEFAULT_BACKUP_DIR}:${RESET}"
+    else
+        echo -e "${CYAN}${BOLD}Available backups in ${DEFAULT_BACKUP_DIR}:${RESET}"
+    fi
     if [ -n "${REMOTE_SESSION_NAME}" ]; then
         echo -e "${CYAN}${BOLD}Session: ${REMOTE_SESSION_NAME}${RESET}"
     fi
     echo ""
 
-    if [ ! -d "${DEFAULT_BACKUP_DIR}" ]; then
+    if [ ! -d "${DEFAULT_BACKUP_DIR}" ] && [ ! -d "${INSTANCE_BACKUP_DIR}" ]; then
         echo -e "  ${YELLOW}Backup directory not found: ${DEFAULT_BACKUP_DIR}${RESET}"
         echo ""
         exit 0
     fi
 
-    BACKUPS=$(ls -1t "${DEFAULT_BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null || echo "")
+    BACKUPS=$(ls -1t $(_backup_search_paths) 2>/dev/null || echo "")
 
     if [ -z "${BACKUPS}" ]; then
         echo -e "  ${YELLOW}No backups found.${RESET}"
@@ -110,7 +143,7 @@ case "${1:-}" in
         DRY_RUN=true
         BACKUP_FILE="${2:-}"
         if [ -z "${BACKUP_FILE}" ]; then
-            LATEST=$(ls -1t "${DEFAULT_BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | head -1 || echo "")
+            LATEST=$(ls -1t $(_backup_search_paths) 2>/dev/null | head -1 || echo "")
             if [ -z "${LATEST}" ]; then
                 echo ""
                 echo -e "${RED}[✗]${RESET} No backup found. Use --list to see available backups."
@@ -126,7 +159,7 @@ case "${1:-}" in
         exit 0
         ;;
     "")
-        LATEST=$(ls -1t "${DEFAULT_BACKUP_DIR}"/${BACKUP_PATTERN} 2>/dev/null | head -1 || echo "")
+        LATEST=$(ls -1t $(_backup_search_paths) 2>/dev/null | head -1 || echo "")
         if [ -z "${LATEST}" ]; then
             echo ""
             echo -e "${RED}[✗]${RESET} No backup found and no file specified."
@@ -223,11 +256,11 @@ step "Creating safety backup of current data..."
 
 SAFETY_TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 if [ -n "${REMOTE_SESSION_NAME}" ]; then
-    SAFETY_BACKUP="${PROJECT_DIR}/backups/claude-code-dock-${REMOTE_SESSION_NAME}-pre-restore-${SAFETY_TIMESTAMP}.tar.gz"
+    SAFETY_BACKUP="${INSTANCE_BACKUP_DIR}/claude-code-dock-${REMOTE_SESSION_NAME}-pre-restore-${SAFETY_TIMESTAMP}.tar.gz"
 else
-    SAFETY_BACKUP="${PROJECT_DIR}/backups/pre-restore-safety-${SAFETY_TIMESTAMP}.tar.gz"
+    SAFETY_BACKUP="${DEFAULT_BACKUP_DIR}/pre-restore-safety-${SAFETY_TIMESTAMP}.tar.gz"
 fi
-mkdir -p "${PROJECT_DIR}/backups"
+mkdir -p "${INSTANCE_BACKUP_DIR}"
 
 SAFETY_ITEMS=()
 if [ -d "${CONFIG_DIR}" ] && [ -n "$(ls -A "${CONFIG_DIR}" 2>/dev/null)" ]; then
@@ -248,9 +281,15 @@ fi
 step "Restoring backup..."
 
 RESTORE_TARGET="${PROJECT_DIR}"
-if [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; then
-    mkdir -p "${CONFIG_BASE_PATH}"
-    RESTORE_TARGET="${CONFIG_BASE_PATH}"
+# dirname(CONFIG_DIR) is where the archive's top-level entry needs to land
+# to end up at CONFIG_DIR after extraction -- for the CONFIG_BASE_PATH case
+# this is mathematically identical to CONFIG_BASE_PATH itself
+# (dirname("$CONFIG_BASE_PATH/$REMOTE_SESSION_NAME") = "$CONFIG_BASE_PATH"),
+# so this covers both resolution modes with one branch instead of
+# duplicating it per mode.
+if { [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; } || [ -n "${INSTANCE_CONFIG_PATH}" ]; then
+    RESTORE_TARGET="$(dirname "${CONFIG_DIR}")"
+    mkdir -p "${RESTORE_TARGET}"
 fi
 
 tar -xzf "${BACKUP_FILE}" -C "${RESTORE_TARGET}"

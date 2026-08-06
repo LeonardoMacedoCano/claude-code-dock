@@ -98,24 +98,23 @@ docker compose up -d --force-recreate
 
 ### claude-code-dock volumes
 
-The project uses five volumes:
+The project uses four volumes:
 
 ```yaml
 volumes:
   - ${WORKSPACE_PATH}:/workspace                                     # User projects
-  - ${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}:/home/node/.claude     # Claude Code credentials (per-session)
+  - ${INSTANCE_CONFIG_PATH:-${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}}:/home/node/.claude  # Claude Code credentials (per-session)
   - ${GLOBAL_CONFIG_PATH:-/dev/null}:/home/node/.claude-global:ro     # Optional: global CLAUDE.md/commands/skills (or /dev/null, a no-op)
   - ${GITHUB_TOKEN_FILE:-/dev/null}:/run/secrets/github_token:ro      # Optional: GitHub PAT file (or /dev/null, a no-op)
-  - ${SHARED_CREDENTIALS_PATH:-/dev/null}:/home/node/.claude-shared-credentials  # Optional: share one login across sessions (or /dev/null, a no-op)
 ```
 
 **Important note:** The config volume mounts to `/home/node/.claude` (not `/root/.claude`), because the actual Claude Code process runs as the `node` user (UID/GID 1000 by default, non-root — set `PUID`/`PGID` in `.env` if your host user differs). It must be writable by that UID on the host — if `CONFIG_BASE_PATH` is unset it silently falls back to `./configs`, and Docker will auto-create that as root-owned on a brand-new session's first start. If that happens, the entrypoint rejects the unwritable directory at startup (see [Container restart loop](#container-restart-loop) below) instead of crash-looping silently — fix it with a one-time `chown -R <PUID>:<PGID> <CONFIG_BASE_PATH>/<REMOTE_SESSION_NAME>` on the host, or let `./scripts/new-session.sh`/`install.sh` create the directory for you up front with the right ownership.
 
-**On the `GITHUB_TOKEN_FILE`, `GLOBAL_CONFIG_PATH`, and `SHARED_CREDENTIALS_PATH` mounts:** unlike the first two, these are designed to always be present in the `volumes:` list, configured or not — `${VAR:-/dev/null}` is a standard Compose idiom for an "optional file mount": when the corresponding `.env` variable is unset, Compose mounts `/dev/null` instead (reads as empty, harmless). This matters more than it sounds for `GLOBAL_CONFIG_PATH` specifically: an earlier version of this line fell back to a real directory (`./shared-config`, since renamed to `GLOBAL_CONFIG_PATH`) instead, which Docker auto-created (root-owned) on the host even for operators who never touched the `GLOBAL_CONFIG_PATH` feature at all. `entrypoint.sh` only ever does `[ -f ... ]`/`[ -d ... ]` checks against the mounted path, both of which simply evaluate false when the target is `/dev/null` instead of a directory — same silent no-op as not mounting it. If you *do* set `GITHUB_TOKEN_FILE` to a host path, make sure the file actually exists there first — Docker auto-creates an empty **directory** at the mount target when the host source is missing, and `entrypoint.sh` detects and warns about that specific case (it can't read a directory as a token). `SHARED_CREDENTIALS_PATH` doesn't have this problem — see below, it's a directory mount specifically to avoid it.
+**`INSTANCE_CONFIG_PATH` (optional, additive):** an explicit path that, when set, is used directly as the config volume source instead of the `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` join — unset, every script (this mount, `backup.sh`, `restore.sh`, `status.sh`) resolves the config directory exactly as before this variable existed. Useful for a directory layout like `<root>/instances/<name>/claude` where the instance identity and its on-disk path are named independently of `CONFIG_BASE_PATH`. See `.env.example` and [Usage Patterns](usage-patterns.md). `./scripts/new-session.sh` deliberately clears an inherited `INSTANCE_CONFIG_PATH` when copying a `.env` as a template for a new session — copying it as-is would point the new session at the same directory as the one it was copied from.
 
-**On `SHARED_CREDENTIALS_PATH` specifically:** by default, every `REMOTE_SESSION_NAME` gets its own isolated credentials — even sessions sharing the same `CONFIG_BASE_PATH` still get separate subfolders (`CONFIG_BASE_PATH/<session>`), so each one prompts for its own login. `SHARED_CREDENTIALS_PATH` is the opt-in way around that: point every session's `.env` at the *same* host directory — it doesn't need to exist beforehand, Docker creates it empty on first use, unlike a single-file mount. It's mounted to a dedicated directory (`/home/node/.claude-shared-credentials`), not straight onto the session's own `.credentials.json`, because Compose can't express "mount this here, but only if the variable is set, otherwise leave whatever's already there alone" — instead, `entrypoint.sh` symlinks the session's own `~/.claude/.credentials.json` to a fixed file inside this mounted directory at startup (also checking the directory is writable by the container's user first; warns non-fatally and skips the link if not — this can happen if the host path didn't exist yet and Docker auto-created it root-owned).
+**On the `GITHUB_TOKEN_FILE` and `GLOBAL_CONFIG_PATH` mounts:** unlike the first two, these are designed to always be present in the `volumes:` list, configured or not — `${VAR:-/dev/null}` is a standard Compose idiom for an "optional file mount": when the corresponding `.env` variable is unset, Compose mounts `/dev/null` instead (reads as empty, harmless). This matters more than it sounds for `GLOBAL_CONFIG_PATH` specifically: an earlier version of this line fell back to a real directory (`./shared-config`, since renamed to `GLOBAL_CONFIG_PATH`) instead, which Docker auto-created (root-owned) on the host even for operators who never touched the `GLOBAL_CONFIG_PATH` feature at all. `entrypoint.sh` only ever does `[ -f ... ]`/`[ -d ... ]` checks against the mounted path, both of which simply evaluate false when the target is `/dev/null` instead of a directory — same silent no-op as not mounting it. If you *do* set `GITHUB_TOKEN_FILE` to a host path, make sure the file actually exists there first — Docker auto-creates an empty **directory** at the mount target when the host source is missing, and `entrypoint.sh` detects and warns about that specific case (it can't read a directory as a token).
 
-A symlink alone is not enough to keep this live: `claude` does not write `.credentials.json` in place, it writes a new file and `rename()`s it over the old path — which detaches whatever was there, including a symlink, exactly like it would replace any other file. A login (or Claude Code rotating its own token later) would otherwise silently strand the new credentials in the session's own directory, invisible to every other session pointed at `SHARED_CREDENTIALS_PATH`. `entrypoint.sh` also starts a small background poller (plain bash, no extra package) right after establishing the link: every 5 seconds it checks whether the session's file turned back into a regular file, and if so immediately promotes it into `SHARED_CREDENTIALS_PATH` and re-links, logging every time it happens (look for `Shared credentials` lines in `dock.log` or `docker logs`). Net effect: a login or token refresh leaves the file outside `SHARED_CREDENTIALS_PATH` for at most a few seconds, not until a restart. A restart is still needed for a session that was already running before `SHARED_CREDENTIALS_PATH` (or its shared file) was set up, since the symlink and its poller are only established once, at startup.
+**Claude Code credentials are always per-instance.** Every `REMOTE_SESSION_NAME`/`INSTANCE_CONFIG_PATH` gets its own isolated `~/.claude`, including its own login — even instances sharing the same `CONFIG_BASE_PATH` or pointed at the same `WORKSPACE_PATH`. Each instance authenticates once, the first time you attach to it (see [First login](getting-started.md#4-first-login-only-once-for-the-first-container)); after that, the credential persists across restarts like everything else under its config directory. There is deliberately no mechanism to share one login across several instances — an earlier version of this project had one (a live symlink to a shared credential file, plus a background poller to keep it in sync), but real-world testing showed Claude Code does not reliably treat a credential copied or linked from another instance's `~/.claude` as already-authenticated, so it added real operational complexity (a per-instance background process, a no-locking shared-file race) without reliably delivering the "skip login" benefit it was meant for. Logging into each instance once, directly, is simpler and doesn't have that failure mode.
 
 ### Inspect volumes
 
@@ -160,6 +159,7 @@ your own `.env`; use this table when you need to know source/scope precisely.
 | `GIT_USER_NAME` / `GIT_USER_EMAIL` | `.env` | Git commit identity |
 | `GITHUB_TOKEN_FILE` | fixed literal | Always `/run/secrets/github_token` inside the container — the host path from `.env`'s `GITHUB_TOKEN_FILE` is only ever used to resolve the volume mount, never passed through directly. See [Git & GitHub Integration](git-integration.md) |
 | `GIT_REPO_URL` | `.env` | Repo to auto-clone into `/workspace` on first start |
+| `INSTANCE_CONFIG_PATH` | `.env` | Passed through for one purpose only: constructing an accurate `chown` hint in `entrypoint.sh`'s fatal error if the config directory isn't writable. The actual mount source is resolved by `docker-compose.yml`'s own interpolation on the host, before the container starts — see the host-only table below |
 | `TERM` / `LANG` / `LC_ALL` | `docker-compose.yml` | Terminal type / encoding |
 
 ```bash
@@ -177,8 +177,8 @@ directly. `docker exec claude-code-dock env` will never show these.
 |----------|---------|-------------|
 | `WORKSPACE_PATH` | `docker-compose.yml` volumes | Host path mounted at `/workspace` |
 | `CONFIG_BASE_PATH` | `docker-compose.yml` volumes | Base dir for per-session config, mounted at `/home/node/.claude` |
+| `INSTANCE_CONFIG_PATH` | `docker-compose.yml` volumes, `scripts/backup.sh`/`restore.sh`/`status.sh`/`new-session.sh` | Optional explicit override of the `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` join, resolved identically by every script via `scripts/lib/config-path.sh`. Additive — unset, every one of these resolves the config directory exactly as before this variable existed |
 | `GLOBAL_CONFIG_PATH` | `docker-compose.yml` volumes | Optional global `CLAUDE.md`/`commands/`/`skills/` dir, mounted read-only |
-| `SHARED_CREDENTIALS_PATH` | `docker-compose.yml` volumes | Optional host directory to share one Claude Code login across sessions instead of one per `REMOTE_SESSION_NAME`. Doesn't need to exist beforehand — created empty on first use |
 | `CLAUDE_DOCK_TAG` | `docker-compose.yml` `image:` | Published tag to pull (default `latest`; `stable` or a pinned `vX.Y.Z`) |
 | `CLAUDE_DOCK_VERSION` | `docker-compose.yml` `build:` | Git ref to build from when the pull fails and `CLAUDE_SOURCE_PATH` is unset (default `main`) |
 | `CLAUDE_CODE_VERSION` | `docker-compose.yml` `build.args` | npm version of `@anthropic-ai/claude-code` to install (default `latest`). Only takes effect on a build — a no-op when pulling the prebuilt image, since its Claude Code version was already fixed at CI build time |
@@ -276,10 +276,23 @@ is a persistent misconfiguration rather than a wedged process (see
 
 ## Backups
 
-`scripts/backup.sh` archives `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (Claude
-Code credentials, always included) and `./workspaces/` (if not empty) into a
-`.tar.gz` under `./backups/`. It never schedules itself — every run is
-either manual or triggered by whatever calls it.
+`scripts/backup.sh` archives `CONFIG_BASE_PATH/REMOTE_SESSION_NAME` (or
+`INSTANCE_CONFIG_PATH` — Claude Code credentials/settings/history, always
+included) and `./workspaces/` (if not empty) into a `.tar.gz`. It never
+schedules itself — every run is either manual or triggered by whatever calls
+it. It does **not** back up an external `WORKSPACE_PATH` by default (that's
+usually managed by its own backup already) — pass `--include-workspace` to
+include it anyway.
+
+**Destination:** `./backups/<REMOTE_SESSION_NAME>/` once a session name is
+known — a subfolder per instance instead of one flat directory shared by
+every session. An unnamed/default session (no `REMOTE_SESSION_NAME` set)
+keeps the flat `./backups/` layout. `--output DIR` always wins outright and
+is used exactly as given, with no subfolder appended. `scripts/restore.sh`
+(`--list`, and the default "most recent backup" resolution) checks **both**
+the per-instance subfolder and the legacy flat location, so backups taken
+before this layout existed stay listable and restorable with no migration
+step needed.
 
 ```bash
 # One-off, manual
@@ -433,9 +446,55 @@ The recommended way to run multiple instances is `./scripts/new-session.sh`
 and a matching `-p claude-<name>` Compose project name, so you can't
 accidentally start session B under session A's `.env` by forgetting the flag),
 and `./scripts/sessions.sh` to list them all — see
-[Getting Started: Scripts](getting-started.md#scripts). The manual approach below (one
-hand-written compose file with several services) still works if you'd rather
-not use the helper scripts:
+[Getting Started: Scripts](getting-started.md#scripts). Each instance
+authenticates independently, the first time you attach to it — there is no
+mechanism to share one Claude Code login across instances (see [Important
+note](#claude-code-dock-volumes) above for why).
+
+### Recommended layout for several instances
+
+`INSTANCE_CONFIG_PATH` and `GITHUB_TOKEN_FILE` pointed at a common host
+directory let you organize several instances under one root, with a clear
+split between what's shared and what's per-instance — useful once you're
+running more than two or three:
+
+```
+<root>/                          e.g. /srv/claude-code-dock, or wherever
+│                                 your local checkout already lives if
+│                                 you build from CLAUDE_SOURCE_PATH
+├── shared/
+│   ├── github/                   <- GITHUB_TOKEN_FILE (if shared across instances)
+│   │   └── github_token.txt
+│   └── global-config/            <- GLOBAL_CONFIG_PATH (optional)
+│
+├── instances/
+│   ├── <instance-a>/claude/      <- INSTANCE_CONFIG_PATH for instance-a
+│   ├── <instance-b>/claude/      <- INSTANCE_CONFIG_PATH for instance-b
+│   └── <instance-n>/claude/
+│
+└── backups/                      <- backup.sh's default destination
+    ├── <instance-a>/
+    └── <instance-b>/
+```
+
+Each instance's `.env.<name>` (created via `./scripts/new-session.sh <name>`)
+sets `INSTANCE_CONFIG_PATH=<root>/instances/<name>/claude` explicitly —
+`new-session.sh` clears any `INSTANCE_CONFIG_PATH` copied from a template
+`.env` rather than silently pointing two instances at the same directory
+(see its entry in `CLAUDE.md` for why), so this is always a deliberate,
+per-instance value, not something that propagates automatically.
+`WORKSPACE_PATH` for each instance stays wherever that project's own files
+actually live — it is **not** part of this tree; only the Dock's own
+state/config/backups are.
+
+If you build from a local checkout (`CLAUDE_SOURCE_PATH`) rather than
+pulling the published image, that checkout directory is a natural home for
+this whole tree too — `backup.sh`'s default output directory is already
+relative to wherever `docker-compose.yml`/`scripts/` live, so keeping code
+and state under the same root avoids needing `--output` on every backup.
+
+The manual approach below (one hand-written compose file with several
+services) still works if you'd rather not use the helper scripts:
 
 ```yaml
 # Modified docker-compose.yml for multiple projects

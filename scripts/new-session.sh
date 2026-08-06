@@ -85,6 +85,19 @@ else
     echo "CONTAINER_NAME=${CONTAINER_NAME_VALUE}" >> "${NEW_ENV}"
 fi
 
+# INSTANCE_CONFIG_PATH (if set in the source .env) is an explicit,
+# single-directory override -- unlike CONFIG_BASE_PATH (which combines with
+# each session's own REMOTE_SESSION_NAME to produce a unique subdir
+# automatically), copying it as-is here would point this brand-new session
+# at the exact same directory as whatever session SOURCE_ENV came from,
+# silently sharing one Claude Code config/history between two containers
+# instead of isolating them. Blank it out and make the operator set a new,
+# unique value on purpose if they want one for this session.
+if grep -q "^INSTANCE_CONFIG_PATH=.\+" "${NEW_ENV}"; then
+    sed -i "s|^INSTANCE_CONFIG_PATH=.*|INSTANCE_CONFIG_PATH=|" "${NEW_ENV}"
+    warn "INSTANCE_CONFIG_PATH from the source .env was cleared in .env.${SESSION_NAME} -- it pointed at another session's config directory. Set a new, unique path for this session if you want one, or leave it blank to use CONFIG_BASE_PATH/${SESSION_NAME} (the default)."
+fi
+
 ok ".env.${SESSION_NAME} created"
 
 step "Creating session config directory..."

@@ -92,7 +92,7 @@ curl -o /srv/projects/homepage/.env https://raw.githubusercontent.com/LeonardoMa
 mkdir -p /srv/claude-config
 ```
 
-`/srv/claude-config` is where `CONFIG_BASE_PATH` points — each `REMOTE_SESSION_NAME` gets its own isolated subfolder under it (`CONFIG_BASE_PATH/<session>`), so by default **every session still needs its own login**, even sharing this same base folder. To share one login across sessions instead, see [step 4](#4-first-login-only-once-for-the-first-container) below.
+`/srv/claude-config` is where `CONFIG_BASE_PATH` points — each `REMOTE_SESSION_NAME` gets its own isolated subfolder under it (`CONFIG_BASE_PATH/<session>`), and its own login — see [step 4](#4-first-login) below.
 
 ### 2. Configure `.env`
 
@@ -117,7 +117,7 @@ docker compose up -d
 
 > Prefer the convenience scripts (`install.sh`, `attach.sh`, `backup.sh`, ...)? Clone the repository instead — see [Scripts](#scripts) below. They still work with `CLAUDE_SOURCE_PATH` unset, since they pull the prebuilt image rather than needing a local clone.
 
-### 4. First login (only once, for the first container)
+### 4. First login
 
 ```bash
 docker exec -it --user node claude-code-dock-homepage tmux attach-session -t main
@@ -125,14 +125,7 @@ docker exec -it --user node claude-code-dock-homepage tmux attach-session -t mai
 
 Complete the authentication flow. Credentials are saved to `CONFIG_BASE_PATH/REMOTE_SESSION_NAME/` (e.g. `/srv/claude-config/HomePage/`). Disconnect with `Ctrl+B, D` — the container keeps running.
 
-For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PATH`, and `REMOTE_SESSION_NAME`. By default each one still needs its own login — `REMOTE_SESSION_NAME` isolates credentials per session on purpose, even under the same `CONFIG_BASE_PATH`. If you'd rather log in once and share it across every session, set the same `SHARED_CREDENTIALS_PATH` directory in each `.env` instead (it doesn't need to exist beforehand — created empty on first use):
-
-```bash
-# add to every session's .env:
-# SHARED_CREDENTIALS_PATH=/srv/claude-config/shared-credentials
-```
-
-The first session to log in seeds that directory; every session started afterward loads from it instead of prompting. See [Environment Variables](docker.md#environment-variables) for the full behavior and caveats — it's a live share (a login or token refresh reaches every other session within a few seconds), except for a session that was already running before `SHARED_CREDENTIALS_PATH` was set up, which needs a restart to pick it up.
+For every additional container: copy, set a new `CONTAINER_NAME`, `WORKSPACE_PATH`, and `REMOTE_SESSION_NAME`, then repeat this step — each instance authenticates independently, once, the first time you attach to it. There is no mechanism to share one login across instances (see [Docker Reference: claude-code-dock volumes](docker.md#claude-code-dock-volumes) for why).
 
 ---
 
