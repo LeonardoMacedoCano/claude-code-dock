@@ -4,7 +4,7 @@
 
 # Claude Code Dock
 
-**Run Claude Code persistently on a 24/7 server — always on, always authenticated, accessible from any device.**
+**Run Claude Code on a server that's always on — and never forgets, even after a crash.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com/)
@@ -16,9 +16,12 @@
 
 ## What It Solves
 
-[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) normally runs in a terminal on your own machine. Its Remote Control feature lets you drive that session from your phone or another device — but only while the terminal it started in stays open. Close the laptop, lose the network, and the session is gone.
+[Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) normally runs in a terminal on your own machine, or via Remote Control from a terminal session that has to stay open. Close the laptop, lose the network, or have the process crash — and the session, along with its context, is gone.
 
-**claude-code-dock fixes that.** It runs Claude inside a Docker container on a server that never turns off — homelab box, NAS, VPS. Boot, stay running, survive disconnects. Open Claude.ai from anywhere and your sessions are already there.
+**claude-code-dock fixes both halves of that problem:**
+
+1. **Always on.** Claude runs inside a Docker container on a server that never sleeps or shuts down — homelab box, NAS, VPS. Not tied to your laptop being open or your terminal staying connected.
+2. **Survives failure, not just disconnects.** Login, conversation history, and settings live on the host (bind-mounted, not inside the container's own writable layer), and the container restarts automatically if it crashes, the host reboots, or you update it. Reconnect and Claude picks up exactly where it left off — no re-authenticating, no starting the conversation over.
 
 If a session freezes (Claude stuck waiting for a permission prompt), VPN into your server, attach to the tmux session, unblock it, detach. No physical access needed.
 
@@ -31,6 +34,7 @@ If a session freezes (Claude stuck waiting for a permission prompt), VPN into yo
 **Yes, if you:**
 - Have a server that stays on 24/7 (homelab, Unraid, NAS, VPS, Raspberry Pi)
 - Want Claude Remote Control available from any device without preparing anything in advance
+- Want login, conversation history, and context to survive a crash, host reboot, or update — not just a disconnect
 - Want multiple projects each with their own persistent Claude session
 
 **No, if you:**
