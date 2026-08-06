@@ -51,7 +51,7 @@ AUTO_START_MODE=remote
 
 From Claude.ai Remote Control, select `HomePage` and ask: *"Update the About page with my new contact info."* Claude is running directly on the server, in the production folder, with your files — from your phone, from anywhere.
 
-One server can run any number of containers, each with its own project and session name, all sharing the same Claude login.
+One server can run any number of containers, each with its own project, session name, and login.
 
 ---
 

@@ -119,7 +119,7 @@ once via `new-session.sh`/`session-up.sh`/`sessions.sh`).
 
 Running more than two or three instances? See [Docker Reference:
 Recommended layout for several instances](docker.md#recommended-layout-for-several-instances)
-for organizing `INSTANCE_CONFIG_PATH`, `SHARED_CREDENTIALS_PATH`,
-`GITHUB_TOKEN_FILE`, and `GLOBAL_CONFIG_PATH` under one `shared/` +
-`instances/` + `backups/` root, independent of whichever pattern above each
+for organizing `INSTANCE_CONFIG_PATH`, `GITHUB_TOKEN_FILE`, and
+`GLOBAL_CONFIG_PATH` under one `shared/` + `instances/` + `backups/` root,
+independent of whichever pattern above each
 individual instance follows.

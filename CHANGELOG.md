@@ -39,18 +39,6 @@ want to know what's actually changing.
   `INSTANCE_CONFIG_PATH` when copying a `.env` as a template for a new
   session, rather than pointing the new session at the same directory as
   the one it was copied from.
-- `SHARED_CREDENTIALS_MODE=seed`: opt-in alternative to
-  `SHARED_CREDENTIALS_PATH`'s original live symlink+background-poller
-  mechanism (still the `live` default, completely unchanged). `seed` copies
-  a shared login into a session's own credentials file once, at boot — no
-  live link, no poller, and no automatic promotion in the other direction.
-  Promoting a session's own login into the shared pool is now a separate,
-  explicit, host-side command: `./scripts/promote-credentials.sh
-  [session-name]`. Exists specifically to avoid a no-locking race in `live`
-  mode: since `live` mode's link is *live*, not a one-time copy, two
-  sessions promoting near-simultaneously can silently overwrite each
-  other's login for every already-linked session, not just new ones. See
-  [docs/docker.md](docs/docker.md#shared-credentials-mode).
 - `backups/<REMOTE_SESSION_NAME>/`: `scripts/backup.sh` now writes into a
   per-instance subfolder by default once a session name is known, instead
   of one flat `./backups/` directory shared by every session.
@@ -71,19 +59,17 @@ want to know what's actually changing.
   arbitrary host path.
 - [docs/docker.md](docs/docker.md#recommended-layout-for-several-instances):
   a recommended `shared/`/`instances/`/`backups/` directory layout tying
-  `INSTANCE_CONFIG_PATH`, `SHARED_CREDENTIALS_PATH`, `GITHUB_TOKEN_FILE`,
-  and `GLOBAL_CONFIG_PATH` together for operators running more than a
-  couple of instances.
+  `INSTANCE_CONFIG_PATH`, `GITHUB_TOKEN_FILE`, and `GLOBAL_CONFIG_PATH`
+  together for operators running more than a couple of instances.
 
 ### Fixed
 - `docs/getting-started.md` incorrectly claimed that pointing multiple
   sessions at the same `CONFIG_BASE_PATH` was enough to share one Claude Code
   login across them ("all containers point here, you log in only once").
   That was never true — `REMOTE_SESSION_NAME` gets its own isolated
-  subfolder under `CONFIG_BASE_PATH` regardless, so each session always
-  needed its own login. Corrected, and now points to the new
-  `SHARED_CREDENTIALS_PATH` variable above for anyone who actually wants
-  that behavior.
+  subfolder under `CONFIG_BASE_PATH` regardless, and (see **Removed**
+  below) there is no mechanism to share a login across sessions at all.
+  Corrected.
 
 ### Changed
 - `scripts/backup.sh`/`restore.sh`/`status.sh` now share one path-resolution
@@ -157,6 +143,18 @@ want to know what's actually changing.
   `--dangerously-skip-permissions` in practice, and `CLAUDE_EXTRA_ARGS`
   already covers passing that flag through explicitly, so there's no need
   for a second, narrower mechanism to keep in sync with it.
+- **Breaking:** `SHARED_CREDENTIALS_PATH` (and the later `SHARED_CREDENTIALS_MODE`,
+  `scripts/promote-credentials.sh`) — the mechanism letting several sessions
+  reuse one Claude Code login, first as a live symlink + background poller,
+  then with a `seed` (one-time copy) alternative. Real-world testing across
+  real instances found that Claude Code does not reliably treat a credential
+  copied or linked from another instance's `~/.claude` as already-authenticated
+  — neither Remote Control nor plain interactive mode skipped the login
+  screen — so the mechanism added a per-instance background process and a
+  no-locking shared-file race without reliably delivering the benefit it
+  existed for. If you have `SHARED_CREDENTIALS_PATH`/`SHARED_CREDENTIALS_MODE`
+  set in `.env`, remove them — each session now always authenticates
+  independently, once, the same as it always has by default.
 
 ## Before this file existed
 

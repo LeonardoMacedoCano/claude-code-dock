@@ -56,10 +56,8 @@ no extra configuration:
   separate tokens around.
 
 Pick whichever matches how you actually think about your instances; nothing
-in claude-code-dock enforces one over the other. The trade-off is the same
-one `SHARED_CREDENTIALS_PATH` already has for Claude Code logins (see
-[Docker Reference: Shared Credentials Mode](docker.md#shared-credentials-mode)):
-sharing widens blast radius — a leak from any one instance exposes the
+in claude-code-dock enforces one over the other. Sharing does widen blast
+radius — a leak from any one instance exposes the
 token to whatever it can reach, not just that instance's own repo(s) — so
 prefer a token scoped as narrowly as the *widest* thing any sharing instance
 actually needs, not the narrowest.
