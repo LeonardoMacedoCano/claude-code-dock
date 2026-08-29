@@ -8,6 +8,7 @@ services:
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
         CLAUDE_DOCK_SOURCE_PATH: ${CLAUDE_SOURCE_PATH:-}
         CLAUDE_DOCK_VERSION: ${CLAUDE_DOCK_VERSION:-main}
+        EXTRA_APT_PACKAGES: ${EXTRA_APT_PACKAGES:-}
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
