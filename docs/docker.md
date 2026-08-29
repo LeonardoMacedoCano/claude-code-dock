@@ -183,6 +183,7 @@ directly. `docker exec claude-code-dock env` will never show these.
 | `CLAUDE_DOCK_VERSION` | `docker-compose.yml` `build:` | Git ref to build from when the pull fails and `CLAUDE_SOURCE_PATH` is unset (default `main`) |
 | `CLAUDE_CODE_VERSION` | `docker-compose.yml` `build.args` | npm version of `@anthropic-ai/claude-code` to install (default `latest`). Only takes effect on a build — a no-op when pulling the prebuilt image, since its Claude Code version was already fixed at CI build time |
 | `CLAUDE_SOURCE_PATH` | `docker-compose.yml` `build:` | Local clone to build from instead of pulling (advanced/dev) — see [Local development](#local-development) |
+| `EXTRA_APT_PACKAGES` | `docker-compose.yml` `build.args` | Space-separated apt packages installed alongside claude-code-dock's own minimal set (default empty — no image size/behavior change). Only takes effect on a build. Example: a project's own Puppeteer/Playwright-driven test suite needs Chrome's Debian runtime libs, missing from `node:lts-bookworm` — see `.env.example` for the exact package list |
 | `BACKUP_RETENTION` | `scripts/backup.sh` | Backups kept per session (default `10`) |
 | `WATCHDOG_NTFY_URL` | `scripts/watchdog.sh` | Webhook notified on restart/skip — read on the host by the crontab path; see [Watchdog](#watchdog) below |
 

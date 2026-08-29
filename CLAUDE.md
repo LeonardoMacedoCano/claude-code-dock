@@ -139,6 +139,7 @@ Not just running the project — modifying claude-code-dock itself and needs the
 | Explicit config directory path instead of the `CONFIG_BASE_PATH`/`REMOTE_SESSION_NAME` join | `INSTANCE_CONFIG_PATH` | Silent no-op when unset — every script resolves `CONFIG_DIR` via `scripts/lib/config-path.sh`'s `resolve_config_dir()`, which falls through to the original join unchanged |
 | Build from local clone instead of pulling | `CLAUDE_SOURCE_PATH` | Not validated by the container itself; `install.sh`/`update.sh`/`session-up.sh` generate `docker-compose.override.yml` to enforce it — a manual `docker compose up -d` run from the same directory picks that up too, once one of the scripts has generated it at least once |
 | Pin the pulled image tag | `CLAUDE_DOCK_TAG` | Silent no-op when unset (falls back to `:latest`); ignored entirely if `CLAUDE_SOURCE_PATH` is set |
+| Extra apt packages baked into the image (e.g. Chrome/Puppeteer runtime libs a project's own test suite needs) | `EXTRA_APT_PACKAGES` | Silent no-op when unset; only takes effect on a build, ignored when pulling the prebuilt image |
 | Backup retention beyond the last 10 | `BACKUP_RETENTION` | Silent no-op when unset (defaults to 10) |
 | CPU/memory resource limits | `docker-compose.resources.yml` (opt-in overlay, not an env var) | Not applied unless explicitly layered with `-f` |
 | Watchdog restart notifications | `WATCHDOG_NTFY_URL` (host-side only) | Silent no-op when unset or `curl` missing |

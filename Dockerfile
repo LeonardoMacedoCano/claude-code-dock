@@ -20,6 +20,16 @@ ENV PATH="/usr/local/bin:${PATH}"
 # security fixes or Claude Code releases on the weekly scheduled rebuild.
 ARG CACHEBUST=1
 
+# Empty by default -- zero image size/behavior change for anyone who doesn't
+# set EXTRA_APT_PACKAGES in .env. Exists so a project that needs a system
+# library the base image doesn't carry (e.g. the Chrome/Chromium runtime
+# libs a Puppeteer/Playwright-based test suite needs) can opt in via .env
+# instead of the operator maintaining a downstream Dockerfile just to add
+# apt packages. Space-separated, passed as-is to apt-get install below --
+# whatever needs it belongs to the project's own environment, not something
+# claude-code-dock validates or knows the contents of.
+ARG EXTRA_APT_PACKAGES=
+
 # upgrade: pulls Debian security-repo fixes for packages already present in
 # the base node:lts-bookworm image (not just the ones we explicitly install
 # below) -- without it, CVEs patched upstream but not yet in this base image
@@ -60,6 +70,7 @@ RUN echo "cachebust=${CACHEBUST}" > /dev/null && \
     less \
     jq \
     tzdata \
+    ${EXTRA_APT_PACKAGES} \
     && dpkg -l > /etc/claude-dock-packages.list \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
