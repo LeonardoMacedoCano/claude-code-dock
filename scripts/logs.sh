@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 ENV_FILE="${PROJECT_DIR}/.env"
+# shellcheck source=lib/config-path.sh
+source "${SCRIPT_DIR}/lib/config-path.sh"
 
 if [ -f "${ENV_FILE}" ]; then
     set -a
@@ -13,8 +15,9 @@ if [ -f "${ENV_FILE}" ]; then
     set +a
 fi
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
-CONFIG_BASE_PATH="${CONFIG_BASE_PATH:-./configs}"
-REMOTE_SESSION_NAME="${REMOTE_SESSION_NAME:-default}"
+CONFIG_BASE_PATH="${CONFIG_BASE_PATH:-}"
+REMOTE_SESSION_NAME="${REMOTE_SESSION_NAME:-}"
+INSTANCE_CONFIG_PATH="${INSTANCE_CONFIG_PATH:-}"
 TAIL_LINES=50
 FOLLOW=true
 SINCE=""
@@ -65,7 +68,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ "${APP_LOG}" == "true" ]; then
-    APP_LOG_FILE="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}/logs/dock.log"
+    # INSTANCE_CONFIG_PATH, when set, wins over CONFIG_BASE_PATH/
+    # REMOTE_SESSION_NAME -- same resolution every other script uses (see
+    # scripts/lib/config-path.sh). Falls back to the CONFIG_BASE_PATH=./configs,
+    # REMOTE_SESSION_NAME=default legacy default when neither is set.
+    if ! resolve_config_dir; then
+        CONFIG_DIR="${PROJECT_DIR}/configs/default"
+    fi
+    APP_LOG_FILE="${CONFIG_DIR}/logs/dock.log"
 
     echo ""
     echo -e "${CYAN}${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
@@ -78,7 +88,7 @@ if [ "${APP_LOG}" == "true" ]; then
     if [ ! -f "${APP_LOG_FILE}" ]; then
         echo -e "${RED}[✗]${RESET} No startup log found yet at that path."
         echo -e "  It is created on first container start. Check REMOTE_SESSION_NAME"
-        echo -e "  and CONFIG_BASE_PATH in .env if this session has already run."
+        echo -e "  and CONFIG_BASE_PATH (or INSTANCE_CONFIG_PATH) in .env if this session has already run."
         echo ""
         exit 1
     fi

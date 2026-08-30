@@ -10,6 +10,8 @@ ENV_FILE="${PROJECT_DIR}/.env"
 ENV_EXAMPLE="${PROJECT_DIR}/.env.example"
 CONTAINER_NAME="${CONTAINER_NAME:-claude-code-dock}"
 WITH_WATCHDOG=false
+# shellcheck source=lib/config-path.sh
+source "${SCRIPT_DIR}/lib/config-path.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -261,13 +263,19 @@ check_env() {
         fi
     fi
 
-    if [ -z "${CONFIG_BASE_PATH:-}" ]; then
-        fail "CONFIG_BASE_PATH not set in .env. Configure it before continuing."
+    # INSTANCE_CONFIG_PATH, when set, is an explicit override that wins over
+    # CONFIG_BASE_PATH/REMOTE_SESSION_NAME (see scripts/lib/config-path.sh) --
+    # only fail here if NEITHER form of config path is usable.
+    if ! resolve_config_dir; then
+        fail "Neither INSTANCE_CONFIG_PATH nor CONFIG_BASE_PATH is set in .env. Configure one of them before continuing."
     fi
 
-    CONFIG_DIR="${CONFIG_BASE_PATH}/${REMOTE_SESSION_NAME}"
     mkdir -p "${CONFIG_DIR}"
-    ok "Session config dir: ${CONFIG_DIR}"
+    if [ -n "${INSTANCE_CONFIG_PATH:-}" ]; then
+        ok "Session config dir (INSTANCE_CONFIG_PATH): ${CONFIG_DIR}"
+    else
+        ok "Session config dir: ${CONFIG_DIR}"
+    fi
     fix_ownership "${CONFIG_DIR}"
 
     if [ -n "${GLOBAL_CONFIG_PATH:-}" ]; then

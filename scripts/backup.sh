@@ -7,6 +7,8 @@ PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 ENV_FILE="${PROJECT_DIR}/.env"
 # shellcheck source=lib/config-path.sh
 source "${SCRIPT_DIR}/lib/config-path.sh"
+# shellcheck source=lib/archive.sh
+source "${SCRIPT_DIR}/lib/archive.sh"
 
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 OUTPUT_DIR="${PROJECT_DIR}/backups"
@@ -233,20 +235,33 @@ create_backup_archive() {
         exit 0
     fi
 
+    # Config, local ./workspaces/, an external --include-workspace dir, and
+    # .env.backup can each come from a different source directory -- the
+    # manifest records, per entry, which directory restore.sh must extract
+    # it back into. See lib/archive.sh for why a single restore destination
+    # isn't enough once more than one of these is present at once.
+    archive_manifest_init
+
     local tar_cmd=("tar" "-czf" "${BACKUP_FILE}")
 
     if [ "${has_config}" == "true" ]; then
         tar_cmd+=("-C" "${config_tar_dir}" "${config_tar_name}")
+        archive_manifest_add "${config_tar_name}" "${config_tar_dir}"
     fi
 
     if [ "${has_workspace}" == "true" ]; then
         tar_cmd+=("-C" "${PROJECT_DIR}" "workspaces")
+        archive_manifest_add "workspaces" "${PROJECT_DIR}"
     fi
 
     if [ "${INCLUDE_WORKSPACE}" == "true" ] && [ -n "${WORKSPACE_PATH}" ]; then
         if [ -d "${WORKSPACE_PATH}" ]; then
             step "Including external workspace: ${WORKSPACE_PATH}"
-            tar_cmd+=("-C" "$(dirname "${WORKSPACE_PATH}")" "$(basename "${WORKSPACE_PATH}")")
+            local ext_dir ext_name
+            ext_dir="$(dirname "${WORKSPACE_PATH}")"
+            ext_name="$(basename "${WORKSPACE_PATH}")"
+            tar_cmd+=("-C" "${ext_dir}" "${ext_name}")
+            archive_manifest_add "${ext_name}" "${ext_dir}"
         else
             warn "External workspace not found: ${WORKSPACE_PATH}"
         fi
@@ -254,10 +269,14 @@ create_backup_archive() {
 
     if [ -n "${MASKED_ENV_TMPDIR}" ] && [ -f "${MASKED_ENV_TMPDIR}/.env.backup" ]; then
         tar_cmd+=("-C" "${MASKED_ENV_TMPDIR}" ".env.backup")
+        archive_manifest_add ".env.backup" "${PROJECT_DIR}"
     fi
+
+    tar_cmd+=("-C" "${ARCHIVE_MANIFEST_TMPDIR}" "${ARCHIVE_MANIFEST_NAME}")
 
     "${tar_cmd[@]}"
 
+    archive_manifest_cleanup
     [ -n "${MASKED_ENV_TMPDIR}" ] && rm -rf "${MASKED_ENV_TMPDIR}"
 
     BACKUP_SIZE=$(du -sh "${BACKUP_FILE}" 2>/dev/null | cut -f1 || echo "unknown")

@@ -12,6 +12,8 @@ BACKUP_SCRIPT="$PROJECT_ROOT/scripts/backup.sh"
 RESTORE_SCRIPT="$PROJECT_ROOT/scripts/restore.sh"
 STATUS_SCRIPT="$PROJECT_ROOT/scripts/status.sh"
 NEW_SESSION_SCRIPT="$PROJECT_ROOT/scripts/new-session.sh"
+INSTALL_SCRIPT="$PROJECT_ROOT/scripts/install.sh"
+LOGS_SCRIPT="$PROJECT_ROOT/scripts/logs.sh"
 
 setup() {
   unset CONFIG_BASE_PATH REMOTE_SESSION_NAME WORKSPACE_PATH INSTANCE_CONFIG_PATH
@@ -26,8 +28,34 @@ setup() {
   cp "$RESTORE_SCRIPT" "$TMP_PROJECT/scripts/restore.sh"
   cp "$STATUS_SCRIPT" "$TMP_PROJECT/scripts/status.sh"
   cp "$NEW_SESSION_SCRIPT" "$TMP_PROJECT/scripts/new-session.sh"
+  cp "$INSTALL_SCRIPT" "$TMP_PROJECT/scripts/install.sh"
+  cp "$LOGS_SCRIPT" "$TMP_PROJECT/scripts/logs.sh"
+  touch "$TMP_PROJECT/docker-compose.yml"
 
   mkdir -p "$TMP_PROJECT/backups"
+
+  # install.sh's own tests below are the only ones in this file that ever
+  # invoke `docker`/`docker compose` -- everything else (backup/restore/
+  # status/new-session) never shells out to Docker at all, so this mock
+  # being present is a no-op for those.
+  MOCK_BIN="$TEST_TMPDIR/bin"
+  mkdir -p "$MOCK_BIN"
+  export PATH="$MOCK_BIN:$PATH"
+  cat > "$MOCK_BIN/docker" << 'DOCKEREOF'
+#!/bin/bash
+ARGS="$*"
+case "$ARGS" in
+  --version) echo "Docker version 24.0.0, build deadbeef"; exit 0 ;;
+  info) exit 0 ;;
+  "compose version --short"*) echo "2.20.0"; exit 0 ;;
+  "compose version"*) echo "Docker Compose version v2.20.0"; exit 0 ;;
+  "compose "*"pull"*) exit 0 ;;
+  "compose "*"up -d"*) exit 0 ;;
+  "inspect --format {{.State.Running}}"*) echo "true"; exit 0 ;;
+esac
+exit 0
+DOCKEREOF
+  chmod +x "$MOCK_BIN/docker"
 
   export TMP_PROJECT
 }
@@ -116,4 +144,65 @@ teardown() {
   [ "$status" -eq 0 ]
 
   [[ "$output" != *"INSTANCE_CONFIG_PATH"* ]]
+}
+
+@test "install.sh: creates and reports the INSTANCE_CONFIG_PATH directory when CONFIG_BASE_PATH is unset" {
+  EXPLICIT_DIR="$TEST_TMPDIR/instances/jornada/claude"
+  # Deliberately not pre-created -- install.sh must create it itself, same
+  # as it already does for CONFIG_BASE_PATH/REMOTE_SESSION_NAME.
+  [ ! -d "$EXPLICIT_DIR" ]
+
+  printf 'REMOTE_SESSION_NAME=jornada\nWORKSPACE_PATH=./workspaces\nINSTANCE_CONFIG_PATH=%s\n' "$EXPLICIT_DIR" > "$TMP_PROJECT/.env"
+
+  run bash "$TMP_PROJECT/scripts/install.sh"
+  [ "$status" -eq 0 ]
+
+  [[ "$output" == *"Session config dir (INSTANCE_CONFIG_PATH): $EXPLICIT_DIR"* ]]
+  [ -d "$EXPLICIT_DIR" ]
+}
+
+@test "install.sh: INSTANCE_CONFIG_PATH wins over a CONFIG_BASE_PATH decoy, and does not create the decoy" {
+  EXPLICIT_DIR="$TEST_TMPDIR/instances/jornada/claude"
+
+  printf 'REMOTE_SESSION_NAME=jornada\nWORKSPACE_PATH=./workspaces\nCONFIG_BASE_PATH=%s/configs\nINSTANCE_CONFIG_PATH=%s\n' \
+    "$TMP_PROJECT" "$EXPLICIT_DIR" > "$TMP_PROJECT/.env"
+
+  run bash "$TMP_PROJECT/scripts/install.sh"
+  [ "$status" -eq 0 ]
+
+  [ -d "$EXPLICIT_DIR" ]
+  [ ! -d "$TMP_PROJECT/configs/jornada" ]
+}
+
+@test "install.sh: fails clearly when neither CONFIG_BASE_PATH nor INSTANCE_CONFIG_PATH is set" {
+  printf 'REMOTE_SESSION_NAME=jornada\nWORKSPACE_PATH=./workspaces\n' > "$TMP_PROJECT/.env"
+
+  run bash "$TMP_PROJECT/scripts/install.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Neither INSTANCE_CONFIG_PATH nor CONFIG_BASE_PATH is set"* ]]
+}
+
+@test "logs.sh --app: finds the startup log via INSTANCE_CONFIG_PATH instead of CONFIG_BASE_PATH/REMOTE_SESSION_NAME" {
+  EXPLICIT_DIR="$TEST_TMPDIR/instances/jornada/claude"
+  mkdir -p "$EXPLICIT_DIR/logs"
+  echo "startup log line" > "$EXPLICIT_DIR/logs/dock.log"
+
+  printf 'REMOTE_SESSION_NAME=jornada\nINSTANCE_CONFIG_PATH=%s\n' "$EXPLICIT_DIR" > "$TMP_PROJECT/.env"
+
+  run bash "$TMP_PROJECT/scripts/logs.sh" --app --no-follow
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"startup log line"* ]]
+}
+
+@test "logs.sh --app: reports 'not found' instead of silently reading the wrong file when only INSTANCE_CONFIG_PATH is set" {
+  # No file exists at the legacy CONFIG_BASE_PATH=./configs, REMOTE_SESSION_NAME=default
+  # location this used to hardcode -- confirms it actually followed
+  # INSTANCE_CONFIG_PATH's resolution instead of falling back silently.
+  EXPLICIT_DIR="$TEST_TMPDIR/instances/jornada/claude"
+  printf 'REMOTE_SESSION_NAME=jornada\nINSTANCE_CONFIG_PATH=%s\n' "$EXPLICIT_DIR" > "$TMP_PROJECT/.env"
+
+  run bash "$TMP_PROJECT/scripts/logs.sh" --app --no-follow
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"No startup log found yet"* ]]
+  [[ "$output" == *"$EXPLICIT_DIR/logs/dock.log"* ]]
 }

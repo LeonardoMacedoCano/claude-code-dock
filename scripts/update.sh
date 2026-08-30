@@ -179,7 +179,9 @@ rebuild_image() {
 }
 
 wait_for_container() {
-    local deadline=$((SECONDS + 30))
+    # Overridable so tests exercising the "never comes up" / rollback path
+    # don't have to burn the full real-world timeout to get there.
+    local deadline=$((SECONDS + ${WAIT_FOR_CONTAINER_TIMEOUT:-30}))
     while [ $SECONDS -lt $deadline ]; do
         if [ "$(docker inspect --format '{{.State.Running}}' "${CONTAINER_NAME}" 2>/dev/null)" = "true" ]; then
             return 0
@@ -203,7 +205,8 @@ wait_for_container() {
 # stays correct if that's ever missing (e.g. a custom CLAUDE_SOURCE_PATH
 # build based on a modified Dockerfile).
 wait_for_healthy() {
-    local deadline=$((SECONDS + 60))
+    # Overridable for the same reason as wait_for_container's timeout above.
+    local deadline=$((SECONDS + ${WAIT_FOR_HEALTHY_TIMEOUT:-60}))
     local status=""
     while [ $SECONDS -lt $deadline ]; do
         status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")"
@@ -243,7 +246,28 @@ attempt_rollback() {
     ok "Re-tagged ${OLD_IMAGE_REF} back onto the previous image."
 
     cd "${PROJECT_DIR}"
-    if ! ${COMPOSE_CMD} "${COMPOSE_FILE_ARGS[@]}" up -d --force-recreate &>/dev/null; then
+
+    # When CLAUDE_SOURCE_PATH is set, docker-compose.override.yml (already in
+    # COMPOSE_FILE_ARGS) sets pull_policy: build -- which tells Compose to
+    # always rebuild the image on `up`, even if one already exists locally.
+    # A plain `up -d --force-recreate` here would therefore rebuild from the
+    # current (still-broken) CLAUDE_SOURCE_PATH and silently overwrite the
+    # retag above before the container ever starts, defeating the rollback
+    # entirely. An extra -f layered last pins pull_policy: never for just
+    # this one recreate, without touching the real override file, so Compose
+    # is forced to use exactly the image just re-tagged above.
+    local rollback_pin
+    rollback_pin="$(mktemp)"
+    cat > "${rollback_pin}" <<'YAML'
+services:
+  claude-code-dock:
+    pull_policy: never
+YAML
+    local rollback_status=0
+    ${COMPOSE_CMD} "${COMPOSE_FILE_ARGS[@]}" -f "${rollback_pin}" up -d --force-recreate &>/dev/null || rollback_status=$?
+    rm -f "${rollback_pin}"
+
+    if [ "${rollback_status}" -ne 0 ]; then
         warn "Rollback recreate failed to even start."
         return 1
     fi
