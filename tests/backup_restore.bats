@@ -99,6 +99,53 @@ _latest_archive() {
   [ "$CURRENT_CONTENT" = '{"corrupted":"data"}' ]
 }
 
+@test "restore roundtrip: workspaces land back in PROJECT_DIR, not inside the config dir" {
+  # CONFIG_BASE_PATH=./configs here resolves to $TMP_PROJECT/configs, a
+  # subdirectory of PROJECT_DIR, not PROJECT_DIR itself -- the same shape as
+  # the realistic CONFIG_BASE_PATH-outside-the-repo case. Before the
+  # manifest fix, restoring an archive containing both the config dir and
+  # ./workspaces/ extracted everything under dirname(CONFIG_DIR)
+  # ($TMP_PROJECT/configs), silently placing workspaces at
+  # $TMP_PROJECT/configs/workspaces instead of $TMP_PROJECT/workspaces.
+  mkdir -p "$TMP_PROJECT/workspaces/myrepo"
+  echo "important workspace file" > "$TMP_PROJECT/workspaces/myrepo/file.txt"
+
+  run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
+  [ "$status" -eq 0 ]
+  ARCHIVE="$(_latest_archive)"
+  [ -n "$ARCHIVE" ]
+
+  rm -rf "$TMP_PROJECT/workspaces/myrepo"
+  echo '{"corrupted":"data"}' > "$TMP_PROJECT/configs/$SESSION/settings.json"
+
+  run bash -c "echo y | bash '$TMP_PROJECT/scripts/restore.sh' '$ARCHIVE'"
+  [ "$status" -eq 0 ]
+
+  [ -f "$TMP_PROJECT/workspaces/myrepo/file.txt" ]
+  [ "$(cat "$TMP_PROJECT/workspaces/myrepo/file.txt")" = "important workspace file" ]
+  # Must not have leaked into the config directory's own tree.
+  [ ! -d "$TMP_PROJECT/configs/workspaces" ]
+}
+
+@test "restore falls back to legacy single-destination extraction for pre-manifest archives" {
+  # Archives created before the manifest mechanism existed carry no
+  # .claude-code-dock-backup-manifest entry -- restore.sh must still handle
+  # them via the old dirname(CONFIG_DIR) heuristic instead of failing.
+  mkdir -p "$TEST_TMPDIR/legacy-archive-root/$SESSION"
+  echo '{"legacy":"content"}' > "$TEST_TMPDIR/legacy-archive-root/$SESSION/settings.json"
+  LEGACY_ARCHIVE="$TMP_PROJECT/backups/$SESSION/claude-code-dock-${SESSION}-backup-legacy.tar.gz"
+  mkdir -p "$(dirname "$LEGACY_ARCHIVE")"
+  tar -czf "$LEGACY_ARCHIVE" -C "$TEST_TMPDIR/legacy-archive-root" "$SESSION"
+
+  echo '{"corrupted":"data"}' > "$TMP_PROJECT/configs/$SESSION/settings.json"
+
+  run bash -c "echo y | bash '$TMP_PROJECT/scripts/restore.sh' '$LEGACY_ARCHIVE'"
+  [ "$status" -eq 0 ]
+
+  RESTORED="$(cat "$TMP_PROJECT/configs/$SESSION/settings.json")"
+  [ "$RESTORED" = '{"legacy":"content"}' ]
+}
+
 @test "restore declining confirmation leaves current data untouched" {
   run bash "$TMP_PROJECT/scripts/backup.sh" --quiet
   [ "$status" -eq 0 ]

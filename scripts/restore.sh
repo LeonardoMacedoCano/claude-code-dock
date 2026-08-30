@@ -8,6 +8,8 @@ DEFAULT_BACKUP_DIR="${PROJECT_DIR}/backups"
 ENV_FILE="${PROJECT_DIR}/.env"
 # shellcheck source=lib/config-path.sh
 source "${SCRIPT_DIR}/lib/config-path.sh"
+# shellcheck source=lib/archive.sh
+source "${SCRIPT_DIR}/lib/archive.sh"
 
 if [ -f "${ENV_FILE}" ]; then
     set -a
@@ -219,7 +221,7 @@ fi
 
 echo ""
 echo -e "  ${BOLD}Backup contents:${RESET}"
-tar -tzf "${BACKUP_FILE}" | head -20 | while read -r line; do
+tar -tzf "${BACKUP_FILE}" | grep -vFx "${ARCHIVE_MANIFEST_NAME}" | head -20 | while read -r line; do
     echo -e "    ${CYAN}→${RESET} ${line}"
 done
 echo ""
@@ -270,15 +272,25 @@ else
 fi
 mkdir -p "${INSTANCE_BACKUP_DIR}"
 
+# Same multi-root problem backup.sh has: config and local ./workspaces/ can
+# come from different source directories, so this safety archive needs the
+# same manifest treatment -- otherwise restoring FROM this safety backup
+# later (it's just another .tar.gz, restore.sh accepts any) would hit the
+# exact bug this manifest mechanism fixes. See lib/archive.sh.
+archive_manifest_init
+
 SAFETY_ITEMS=()
 if [ -d "${CONFIG_DIR}" ] && [ -n "$(ls -A "${CONFIG_DIR}" 2>/dev/null)" ]; then
     SAFETY_ITEMS+=("-C" "$(dirname "${CONFIG_DIR}")" "$(basename "${CONFIG_DIR}")")
+    archive_manifest_add "$(basename "${CONFIG_DIR}")" "$(dirname "${CONFIG_DIR}")"
 fi
 if [ -d "${PROJECT_DIR}/workspaces" ] && [ -n "$(ls -A "${PROJECT_DIR}/workspaces" 2>/dev/null)" ]; then
     SAFETY_ITEMS+=("-C" "${PROJECT_DIR}" "workspaces")
+    archive_manifest_add "workspaces" "${PROJECT_DIR}"
 fi
 
 if [ ${#SAFETY_ITEMS[@]} -gt 0 ]; then
+    SAFETY_ITEMS+=("-C" "${ARCHIVE_MANIFEST_TMPDIR}" "${ARCHIVE_MANIFEST_NAME}")
     tar -czf "${SAFETY_BACKUP}" "${SAFETY_ITEMS[@]}" 2>/dev/null && \
         ok "Safety backup created: ${BOLD}$(basename "${SAFETY_BACKUP}")${RESET}" || \
         warn "Could not create safety backup. Continuing anyway."
@@ -286,21 +298,35 @@ else
     warn "Nothing to safety-backup. Directories are empty."
 fi
 
+archive_manifest_cleanup
+
 step "Restoring backup..."
 
-RESTORE_TARGET="${PROJECT_DIR}"
-# dirname(CONFIG_DIR) is where the archive's top-level entry needs to land
-# to end up at CONFIG_DIR after extraction -- for the CONFIG_BASE_PATH case
-# this is mathematically identical to CONFIG_BASE_PATH itself
-# (dirname("$CONFIG_BASE_PATH/$REMOTE_SESSION_NAME") = "$CONFIG_BASE_PATH"),
-# so this covers both resolution modes with one branch instead of
-# duplicating it per mode.
-if { [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; } || [ -n "${INSTANCE_CONFIG_PATH}" ]; then
-    RESTORE_TARGET="$(dirname "${CONFIG_DIR}")"
-    mkdir -p "${RESTORE_TARGET}"
-fi
+# Archives created by the current backup.sh/restore.sh carry a manifest
+# mapping each top-level entry to its own destination directory (config and
+# ./workspaces/ can come from different source directories -- see
+# lib/archive.sh). Extracting all of them through one shared -C target is
+# only correct when every entry happened to share the same source root,
+# which the manifest-based path no longer has to assume.
+if ! archive_extract_with_manifest "${BACKUP_FILE}"; then
+    # Legacy archive (created before the manifest existed) -- fall back to
+    # the original single-destination extraction. Correct as long as the
+    # archive only ever contained the config dir, which was the case this
+    # heuristic was originally written for.
+    RESTORE_TARGET="${PROJECT_DIR}"
+    # dirname(CONFIG_DIR) is where the archive's top-level entry needs to land
+    # to end up at CONFIG_DIR after extraction -- for the CONFIG_BASE_PATH case
+    # this is mathematically identical to CONFIG_BASE_PATH itself
+    # (dirname("$CONFIG_BASE_PATH/$REMOTE_SESSION_NAME") = "$CONFIG_BASE_PATH"),
+    # so this covers both resolution modes with one branch instead of
+    # duplicating it per mode.
+    if { [ -n "${CONFIG_BASE_PATH}" ] && [ -n "${REMOTE_SESSION_NAME}" ]; } || [ -n "${INSTANCE_CONFIG_PATH}" ]; then
+        RESTORE_TARGET="$(dirname "${CONFIG_DIR}")"
+        mkdir -p "${RESTORE_TARGET}"
+    fi
 
-tar -xzf "${BACKUP_FILE}" -C "${RESTORE_TARGET}"
+    tar -xzf "${BACKUP_FILE}" -C "${RESTORE_TARGET}"
+fi
 
 ok "Data restored successfully."
 
