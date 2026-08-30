@@ -50,6 +50,7 @@ BATS_FILES=(
   "$SCRIPT_DIR/status_update_check.bats"
   "$SCRIPT_DIR/session_up.bats"
   "$SCRIPT_DIR/watchdog.bats"
+  "$SCRIPT_DIR/update_rollback.bats"
 )
 
 BATS_ERRORS=0
